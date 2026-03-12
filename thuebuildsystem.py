@@ -38,7 +38,9 @@ class BuildPaymentView(discord.ui.View):
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Tạo mã QR VietQR
         qr_url = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.price}&addInfo={self.info}"
+        
         embed = discord.Embed(
             title="💳 THANH TOÁN CHUYỂN KHOẢN",
             description=(
@@ -50,7 +52,10 @@ class BuildPaymentView(discord.ui.View):
             color=0xF1C40F
         )
         embed.set_image(url=qr_url)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.set_footer(text="Hệ thống sẽ tự động xác nhận sau khi nhận được tiền.")
+        
+        # CHỈNH SỬA TẠI ĐÂY: ephemeral=False để hiện công khai cho mọi người
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
 class BuildSystem(commands.Cog):
     def __init__(self, bot):
@@ -60,6 +65,7 @@ class BuildSystem(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def thuebuild(self, ctx, price: int):
         channel_name = ctx.channel.name
+        # Lấy mã đơn từ tên kênh (ví dụ: test-lệnh -> TEST)
         order_code = channel_name.split('-')[0].upper()
         
         target_user = None
@@ -67,7 +73,9 @@ class BuildSystem(commands.Cog):
             if not m.bot and not m.guild_permissions.administrator:
                 target_user = m; break
         
-        if not target_user: return await ctx.send("❌ Không tìm thấy khách hàng trong ticket!")
+        if not target_user: 
+            # Nếu không tìm thấy khách, lấy chính người gõ lệnh để test
+            target_user = ctx.author
 
         bank_waiting[order_code] = {"channel": ctx.channel.id, "price": price, "user": target_user.id}
         
@@ -98,7 +106,6 @@ class BuildSystem(commands.Cog):
             data = bank_waiting[matched_code]
             channel = self.bot.get_channel(data["channel"])
             
-            # --- PHẦN GHI CHÚ ĐÃ THAY ĐỔI Ở ĐÂY ---
             embed_success = discord.Embed(
                 title="🎉 THANH TOÁN THÀNH CÔNG (TỰ ĐỘNG)",
                 description="Hệ thống đã xác nhận giao dịch qua biến động số dư!",
@@ -134,7 +141,6 @@ class BuildSystem(commands.Cog):
             data = bank_waiting[code]
             channel = self.bot.get_channel(data["channel"])
             
-            # --- PHẦN GHI CHÚ ĐÃ THAY ĐỔI Ở ĐÂY ---
             embed_success = discord.Embed(
                 title="🎉 THANH TOÁN THÀNH CÔNG (ADMIN DUYỆT)",
                 description="Hệ thống đã xác nhận giao dịch thủ công bởi Admin!",
