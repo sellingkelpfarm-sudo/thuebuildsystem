@@ -30,15 +30,15 @@ def db_update_status(code, status):
 init_db()
 
 class BuildPaymentView(discord.ui.View):
-    def __init__(self, price, order_code, full_name):
+    def __init__(self, price, order_code, customer_name):
         super().__init__(timeout=None)
         self.price = price
         self.code = order_code
-        self.info = f"thuebuildcua:#{full_name}"
+        # Sử dụng tên khách hàng tách từ tên kênh
+        self.info = f"thuebuildcua:#{order_code.lower()}-{customer_name}"
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Tạo mã QR VietQR
         qr_url = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.price}&addInfo={self.info}"
         
         embed = discord.Embed(
@@ -53,8 +53,6 @@ class BuildPaymentView(discord.ui.View):
         )
         embed.set_image(url=qr_url)
         embed.set_footer(text="Hệ thống sẽ tự động xác nhận sau khi nhận được tiền.")
-        
-        # CHỈNH SỬA TẠI ĐÂY: ephemeral=False để hiện công khai cho mọi người
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
 class BuildSystem(commands.Cog):
@@ -65,23 +63,24 @@ class BuildSystem(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def thuebuild(self, ctx, price: int):
         channel_name = ctx.channel.name
-        # Lấy mã đơn từ tên kênh (ví dụ: test-lệnh -> TEST)
-        order_code = channel_name.split('-')[0].upper()
+        parts = channel_name.split('-')
+        
+        # Tách mã đơn và tên khách hàng
+        order_code = parts[0].upper()
+        customer_name = parts[1] if len(parts) > 1 else "khachhang"
         
         target_user = None
         for m in ctx.channel.members:
             if not m.bot and not m.guild_permissions.administrator:
                 target_user = m; break
         
-        if not target_user: 
-            # Nếu không tìm thấy khách, lấy chính người gõ lệnh để test
-            target_user = ctx.author
+        if not target_user: target_user = ctx.author
 
         bank_waiting[order_code] = {"channel": ctx.channel.id, "price": price, "user": target_user.id}
         
         conn = sqlite3.connect('build_orders.db')
         conn.execute("INSERT OR REPLACE INTO waiting_builds VALUES (?, ?, ?, ?, ?, ?)", 
-                     (order_code, ctx.channel.id, f"Thuê Build (#{channel_name})", price, target_user.id, 0))
+                     (order_code, ctx.channel.id, f"Thuê Build ({customer_name})", price, target_user.id, 0))
         conn.commit()
         conn.close()
 
@@ -89,10 +88,11 @@ class BuildSystem(commands.Cog):
             title="🏗️ XÁC NHẬN THUÊ BUILD",
             description=f"Chào {target_user.mention}! Admin đã tạo đơn thuê build cho bạn.\n\n"
                         f"🆔 **Mã đơn:** `{order_code}`\n"
+                        f"👤 **Khách hàng:** `{customer_name}`\n"
                         f"💰 **Giá tiền:** `{price:,} VND`",
             color=0x3498DB
         )
-        await ctx.send(content=target_user.mention, embed=embed, view=BuildPaymentView(price, order_code, channel_name))
+        await ctx.send(content=target_user.mention, embed=embed, view=BuildPaymentView(price, order_code, customer_name))
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -125,8 +125,8 @@ class BuildSystem(commands.Cog):
                     color=0xE67E22
                 )
                 embed_admin.add_field(name="🆔 Mã đơn", value=f"`{matched_code}`")
-                embed_admin.add_field(name="📍 Kênh", value=f"<#{data['channel']}>")
-                embed_admin.add_field(name="🔗 Phím tắt", value=f"[Đi tới kênh](https://discord.com/channels/{message.guild.id}/{data['channel']})")
+                embed_admin.add_field(name="📍 Kênh Ticket", value=f"<#{data['channel']}>")
+                embed_admin.add_field(name="🔗 Phím tắt", value=f"[Bay tới kênh](https://discord.com/channels/{message.guild.id}/{data['channel']})")
                 await admin_ch.send(embed=embed_admin)
 
             db_update_status(matched_code, 1)
@@ -174,7 +174,7 @@ class BuildSystem(commands.Cog):
             db_update_status(order_code, 2)
             conn.close()
         else:
-            await ctx.send("❌ Không tìm thấy đơn đang build phù hợp.")
+            await ctx.send("❌ Không tìm thấy đơn hàng đang build cho kênh này!", delete_after=5)
 
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
