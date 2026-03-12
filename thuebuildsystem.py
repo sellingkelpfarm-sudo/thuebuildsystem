@@ -4,22 +4,22 @@ import asyncio
 import random
 import string
 import urllib.parse
-import re  # Sử dụng Regex để quét mã đơn cực nhạy
+import re
 
 # --- CẤU HÌNH ID ---
 BANK_CHANNEL_ID = 1479440469120389221         
 ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 
 
-# Lưu trữ đơn đang chờ trong RAM
 bank_waiting = {}
 
 class BuildPaymentView(discord.ui.View):
     def __init__(self, price, order_code, bot):
         super().__init__(timeout=None)
         self.price = price
-        self.code = order_code # Ví dụ: BUILD-2649
+        self.code = order_code 
         self.bot = bot
-        self.info = f"BUILD{order_code.split('-')[1]}" # Nội dung QR: BUILD2649
+        # Tạo nội dung giống ảnh mẫu của bạn
+        self.info = f"thuebuildcua:#{order_code.lower()}-louislatuidayy" 
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -30,7 +30,6 @@ class BuildPaymentView(discord.ui.View):
         safe_info = urllib.parse.quote(self.info)
         qr_url = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.price}&addInfo={safe_info}"
         
-        # --- LOGIC ĐẾM NGƯỢC TỪNG GIÂY ---
         seconds_left = 300 
         embed = discord.Embed(
             title="💳 THANH TOÁN CHUYỂN KHOẢN",
@@ -43,14 +42,13 @@ class BuildPaymentView(discord.ui.View):
             color=0xF1C40F
         )
         embed.set_image(url=qr_url)
-        embed.set_footer(text="Hệ thống tự động xác nhận sau khi nhận biến động số dư.")
+        embed.set_footer(text="Hệ thống tự động xác nhận sau khi nhận được tiền.")
         
         await interaction.response.send_message(embed=embed)
         msg = await interaction.original_response()
 
         while seconds_left > 0:
-            if self.code not in bank_waiting: return # Dừng đếm nếu đã trả tiền
-
+            if self.code not in bank_waiting: return 
             await asyncio.sleep(1)
             seconds_left -= 1
             mins, secs = divmod(seconds_left, 60)
@@ -76,54 +74,60 @@ class BuildSystem(commands.Cog):
     @commands.command(name="thuebuild")
     @commands.has_permissions(administrator=True)
     async def thuebuild(self, ctx, price: int):
+        # Tạo mã 4 số ngẫu nhiên
         random_id = ''.join(random.choices(string.digits, k=4))
         order_code = f"BUILD-{random_id}"
         
         target_user = next((m for m in ctx.channel.members if not m.bot and not m.guild_permissions.administrator), ctx.author)
         bank_waiting[order_code] = {"channel": ctx.channel.id, "price": price, "user": target_user.id}
         
-        embed = discord.Embed(
-            title="🏗️ XÁC NHẬN THUÊ BUILD",
-            description=f"🆔 **Mã đơn:** `{order_code}`\n💰 **Giá:** `{price:,} VND`",
-            color=0x3498DB
-        )
+        embed = discord.Embed(title="🏗️ XÁC NHẬN THUÊ BUILD", color=0x3498DB)
+        embed.description = f"Chào {target_user.mention}! Admin đã tạo đơn thuê build cho bạn."
+        embed.add_field(name="🆔 Mã đơn", value=f"`{order_code}`", inline=False)
+        embed.add_field(name="💰 Giá tiền", value=f"`{price:,} VND`", inline=False)
+        
         await ctx.send(content=target_user.mention, embed=embed, view=BuildPaymentView(price, order_code, self.bot))
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        # Kiểm tra ID kênh biến động số dư
-        if message.author.bot or message.channel.id != BANK_CHANNEL_ID: return
+        # Chỉ quét trong kênh báo số dư
+        if message.channel.id != BANK_CHANNEL_ID: return
         
-        # CHÌA KHÓA: Tìm cụm BUILD + 4 chữ số trong tin nhắn ngân hàng
-        match = re.search(r"BUILD(\d{4})", message.content.upper())
-        if not match: return
+        # Làm sạch nội dung tin nhắn: viết hoa, xóa khoảng trắng và ký tự đặc biệt
+        clean_msg = message.content.upper().replace(" ", "").replace("#", "").replace("-", "")
+        
+        # LOGIC TÌM DÒNG CUỐI: Tìm cụm BUILD kèm 4 số nằm ở bất kỳ đâu trong tin nhắn
+        matches = re.findall(r"BUILD(\d{4})", clean_msg)
+        
+        if matches:
+            # Lấy mã cuối cùng tìm thấy (phòng trường hợp tin nhắn có nhiều chữ BUILD)
+            found_num = matches[-1] 
+            full_waiting_code = f"BUILD-{found_num}"
 
-        found_id = match.group(1) # Lấy 4 số, ví dụ: 2649
-        full_code = f"BUILD-{found_id}"
+            if full_waiting_code in bank_waiting:
+                data = bank_waiting[full_waiting_code]
+                channel = self.bot.get_channel(data["channel"])
+                del bank_waiting[full_waiting_code] 
+                
+                # Embed thành công
+                embed_ok = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (TỰ ĐỘNG)", color=0x2ECC71)
+                embed_ok.description = "Hệ thống đã xác nhận giao dịch qua biến động số dư!"
+                embed_ok.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND", inline=True)
+                embed_ok.add_field(name="🆔 Mã đơn", value=found_num, inline=True)
+                embed_ok.add_field(name="📥 Ghi chú", value="Admin đã nhận được tiền và đang sắp xếp thời gian. Vui lòng đợi nhé!", inline=False)
+                
+                if channel: await channel.send(content=f"<@{data['user']}>", embed=embed_ok)
+                
+                # Báo cho Admin
+                admin_ch = self.bot.get_channel(ADMIN_TRACKING_CHANNEL_ID)
+                if admin_ch:
+                    embed_ad = discord.Embed(title="👷 ĐƠN THUÊ BUILD MỚI", color=0xE67E22)
+                    embed_ad.description = f"Khách hàng <@{data['user']}> đã thanh toán tiền thuê build."
+                    embed_ad.add_field(name="🆔 Mã đơn", value=f"`{found_num}`", inline=True)
+                    embed_ad.add_field(name="📍 Kênh Ticket", value=f"<#{data['channel']}>", inline=True)
+                    await admin_ch.send(embed=embed_ad)
 
-        if full_code in bank_waiting:
-            data = bank_waiting[full_code]
-            channel = self.bot.get_channel(data["channel"])
-            
-            del bank_waiting[full_code] # Xóa khỏi RAM để dừng đếm ngược
-            
-            # Thông báo thành công cho khách
-            embed_ok = discord.Embed(title="🎉 THANH TOÁN THÀNH CÔNG (TỰ ĐỘNG)", color=0x2ECC71)
-            embed_ok.add_field(name="💰 Số tiền", value=f"{data['price']:,} VND")
-            embed_ok.add_field(name="🆔 Mã đơn", value=full_code)
-            embed_ok.set_footer(text="Hệ thống đã xác nhận giao dịch thành công!")
-            
-            if channel: await channel.send(content=f"<@{data['user']}>", embed=embed_ok)
-            
-            # Báo cho Admin
-            admin_ch = self.bot.get_channel(ADMIN_TRACKING_CHANNEL_ID)
-            if admin_ch:
-                embed_ad = discord.Embed(title="👷 ĐƠN THUÊ BUILD MỚI", color=0xE67E22)
-                embed_ad.add_field(name="Mã", value=full_code); embed_ad.add_field(name="Kênh", value=f"<#{data['channel']}>")
-                await admin_ch.send(embed=embed_ad)
-
-            await message.add_reaction("✅")
+                await message.add_reaction("✅")
 
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
-    
