@@ -45,7 +45,7 @@ class BuildPaymentView(discord.ui.View):
         embed.add_field(name="📝 Nội dung CK", value=f"`{self.info}`", inline=False)
         embed.add_field(name="🛡️ Lưu ý", value="1. Chuyển đúng nội dung và số tiền.\n2. Giữ lại ảnh giao dịch nếu có sự cố.\n3. Đơn sẽ hết hạn sau 5 phút.", inline=False)
         embed.set_image(url=qr_url)
-        embed.set_footer(text="Schematics Shop - Uy Tín & Chất Lượng")
+        embed.set_footer(text="LoTuss's Schematics Shop - Uy Tín & Chất Lượng")
         
         await interaction.response.send_message(embed=embed)
 
@@ -147,7 +147,7 @@ class BuildSystem(commands.Cog):
                 done_dm.add_field(name="🆔 Mã số đơn", value=f"`BUILD-{order_data['code']}`", inline=True)
                 done_dm.add_field(name="🏗️ Trạng thái", value="`ĐÃ XONG (COMPLETED)` ✅", inline=True)
                 done_dm.add_field(name="⭐ Feedback", value="Hãy để lại đánh giá của bạn để giúp Shop phát triển hơn nhé!", inline=False)
-                done_dm.set_footer(text="Cảm ơn bạn đã đồng hành cùng Schematics Shop!")
+                done_dm.set_footer(text="Cảm ơn bạn đã đồng hành cùng LoTuss's Schematics Shop!")
                 await customer.send(embed=done_dm)
             except: pass
 
@@ -209,7 +209,7 @@ class BuildPaymentView(discord.ui.View):
         embed.add_field(name="📝 Nội dung CK", value=f"`{self.info}`", inline=False)
         embed.add_field(name="🛡️ Lưu ý", value="1. Chuyển đúng nội dung và số tiền.\n2. Giữ lại ảnh giao dịch nếu có sự cố.\n3. Đơn sẽ hết hạn sau 5 phút.", inline=False)
         embed.set_image(url=qr_url)
-        embed.set_footer(text="Schematics Shop - Uy Tín & Chất Lượng")
+        embed.set_footer(text="LoTuss's Schematics Shop - Uy Tín & Chất Lượng")
         
         await interaction.response.send_message(embed=embed)
 
@@ -247,7 +247,7 @@ class BuildSystem(commands.Cog):
             if customer:
                 try:
                     inv = discord.Embed(title="🧾 HÓA ĐƠN XÁC NHẬN THANH TOÁN", color=0x2ECC71, timestamp=datetime.now())
-                    inv.set_author(name="Schematics Shop Receipt", icon_url=customer.display_avatar.url)
+                    inv.set_author(name="LoTuss's Schematics Shop Receipt", icon_url=customer.display_avatar.url)
                     inv.description = "Cảm ơn bạn đã thanh toán thành công đơn hàng thuê build!"
                     inv.add_field(name="📊 Trạng thái", value="`Đã thanh toán` ✅", inline=True)
                     inv.add_field(name="🆔 Mã đơn", value=f"`BUILD-{order_id}`", inline=True)
@@ -311,7 +311,7 @@ class BuildSystem(commands.Cog):
                 done_dm.add_field(name="🆔 Mã số đơn", value=f"`BUILD-{order_data['code']}`", inline=True)
                 done_dm.add_field(name="🏗️ Trạng thái", value="`ĐÃ XONG (COMPLETED)` ✅", inline=True)
                 done_dm.add_field(name="⭐ Feedback", value="Hãy để lại đánh giá của bạn để giúp Shop phát triển hơn nhé!", inline=False)
-                done_dm.set_footer(text="Cảm ơn bạn đã đồng hành cùng Schematics Shop!")
+                done_dm.set_footer(text="Cảm ơn bạn đã đồng hành cùng LoTuss's Schematics Shop!")
                 await customer.send(embed=done_dm)
             except: pass
 
@@ -320,10 +320,10 @@ class BuildSystem(commands.Cog):
         embed_client.add_field(name="👤 Người mua", value=f"<@{order_data['user']}>", inline=True)
         embed_client.add_field(name="🆔 Mã đơn", value=f"`{order_data['code']}`", inline=True)
         embed_client.add_field(name="👷 Admin", value=ctx.author.mention, inline=False)
-        embed_client.set_image(url="https://i.imgur.com/E8jEOnU.gif") # Bạn có thể thay bằng gif thợ xây
         await ctx.send(content=f"<@{order_data['user']}>", embed=embed_client)
 
         del active_orders[ctx.channel.id]
 
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
+
