@@ -23,7 +23,7 @@ class BuildPaymentView(discord.ui.View):
         self.bot = bot
         self.info = order_code.replace("-", "").upper()
 
-    @discord.ui.button(label="💳 NHẬN THÔNG TIN THANH TOÁN", style=discord.ButtonStyle.green, emoji="💰")
+    @discord.ui.button(label="💳THANH TOÁN THUÊ BUILD NGAY", style=discord.ButtonStyle.green, emoji="💰")
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
         button.disabled = True
         button.label = "ĐÃ HIỆN MÃ QR"
@@ -94,7 +94,7 @@ class BuildSystem(commands.Cog):
                 embed_ok = discord.Embed(title="✅ THANH TOÁN THÀNH CÔNG", color=0x2ECC71)
                 embed_ok.add_field(name="💰 Số tiền", value=f"`{data['price']:,} VND`", inline=True)
                 embed_ok.add_field(name="🆔 Mã đơn", value=f"`{order_id}`", inline=True)
-                embed_ok.description = "Admin đã nhận được tiền và đang chuẩn bị thực hiện build."
+                embed_ok.description = "Admin đang duyệt và sẽ thông báo với bạn sau khi có thời gian nhé"
                 await client_chan.send(content=f"<@{data['user']}>", embed=embed_ok)
 
             return True
@@ -175,3 +175,4 @@ class BuildSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
+
