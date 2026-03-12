@@ -4,11 +4,12 @@ import asyncio
 import sqlite3
 import os
 from datetime import datetime
+import urllib.parse # Thêm thư viện để mã hóa link ảnh
 
 # --- CẤU HÌNH ID ---
 BANK_CHANNEL_ID = 1479440469120389221         
 PAYMENT_LOG_CHANNEL_ID = 1481239066115571885   
-ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 
+ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 #
 FEEDBACK_CHANNEL_MENTION = "<#1481245879607492769>"
 
 bank_waiting = {}
@@ -34,12 +35,19 @@ class BuildPaymentView(discord.ui.View):
         super().__init__(timeout=None)
         self.price = price
         self.code = order_code
-        # Sử dụng tên khách hàng tách từ tên kênh
+        # Nội dung chuyển khoản chứa dấu # và -
         self.info = f"thuebuildcua:#{order_code.lower()}-{customer_name}"
 
     @discord.ui.button(label="💳 CHUYỂN KHOẢN", style=discord.ButtonStyle.green)
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
-        qr_url = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.price}&addInfo={self.info}"
+        # 1. Chống spam: Vô hiệu hóa nút ngay lập tức
+        button.disabled = True
+        button.label = "ĐÃ HIỆN MÃ QR"
+        await interaction.message.edit(view=self)
+
+        # 2. Mã hóa nội dung để link ảnh không bị lỗi
+        safe_info = urllib.parse.quote(self.info)
+        qr_url = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.price}&addInfo={safe_info}"
         
         embed = discord.Embed(
             title="💳 THANH TOÁN CHUYỂN KHOẢN",
@@ -53,6 +61,7 @@ class BuildPaymentView(discord.ui.View):
         )
         embed.set_image(url=qr_url)
         embed.set_footer(text="Hệ thống sẽ tự động xác nhận sau khi nhận được tiền.")
+        
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
 class BuildSystem(commands.Cog):
@@ -65,7 +74,6 @@ class BuildSystem(commands.Cog):
         channel_name = ctx.channel.name
         parts = channel_name.split('-')
         
-        # Tách mã đơn và tên khách hàng
         order_code = parts[0].upper()
         customer_name = parts[1] if len(parts) > 1 else "khachhang"
         
@@ -178,3 +186,4 @@ class BuildSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
+    
