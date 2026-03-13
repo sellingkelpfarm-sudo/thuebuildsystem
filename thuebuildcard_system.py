@@ -20,8 +20,8 @@ app = FastAPI()
 
 # --- CẤU HÌNH ---
 TOKEN = os.getenv("TOKEN")
-PARTNER_ID = "86935102540"
-PARTNER_KEY = "c63d72291473a68fcbb23261491a103f"
+PARTNER_ID = "95904113535"
+PARTNER_KEY = "349afaff71cbd86fd48c6a83421071b2"
 API_URL = "https://gachthe1s.com/chargingws/v2"
 
 SHOP_NAME = "LoTuss's Schematic Shop"
@@ -268,3 +268,4 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
 # ===== HÀM SETUP CHO EXTENSION (FIX LỖI RAILWAY) =====
 async def setup(bot):
     await bot.add_cog(BuildCardSystem(bot))
+
