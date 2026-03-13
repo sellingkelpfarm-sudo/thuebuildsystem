@@ -122,7 +122,6 @@ async def callback_handler(request: Request):
     
     order = get_order(request_id)
     if order and status == "1":
-        # Tìm Cog và gọi xử lý xác nhận
         cog = bot.get_cog("BuildCardSystem")
         if cog:
             bot.loop.create_task(cog.process_confirm_order(order, is_manual=False))
