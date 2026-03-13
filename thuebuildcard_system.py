@@ -124,7 +124,8 @@ async def callback_handler(request: Request):
     if order and status == "1":
         cog = bot.get_cog("BuildCardSystem")
         if cog:
-            bot.loop.create_task(cog.process_confirm_order(order, is_manual=False))
+            # Gọi xử lý đơn hàng từ bot
+            asyncio.run_coroutine_threadsafe(cog.process_confirm_order(order, is_manual=False), bot.loop)
     
     return {"status": 1, "message": "success"}
 
@@ -241,12 +242,23 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
             else:
                 await interaction.followup.send(f"❌ Lỗi: {result.get('message')}. Thử lại sau {COOLDOWN_TIME}s.", ephemeral=True)
 
-# --- KHỞI CHẠY ---
-@app.on_event("startup")
-async def startup_event():
+# --- KHỞI CHẠY DUY NHẤT ---
+async def main():
+    # Khởi tạo database
+    init_db()
+    # Nạp Cog cho bot
     await bot.add_cog(BuildCardSystem(bot))
-    asyncio.create_task(bot.start(TOKEN))
+    
+    # Cấu hình Web Server
+    port = int(os.environ.get("PORT", 8080))
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+    server = uvicorn.Server(config)
+    
+    # Chạy song song cả Web Server và Bot Discord trên cùng 1 process
+    await asyncio.gather(
+        server.serve(),
+        bot.start(TOKEN)
+    )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    asyncio.run(main())
