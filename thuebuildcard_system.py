@@ -20,8 +20,8 @@ app = FastAPI()
 
 # --- CẤU HÌNH ---
 TOKEN = os.getenv("TOKEN")
-PARTNER_ID = "95904113535"
-PARTNER_KEY = "349afaff71cbd86fd48c6a83421071b2"
+PARTNER_ID = "86935102540"
+PARTNER_KEY = "c63d72291473a68fcbb23261491a103f"
 API_URL = "https://gachthe1s.com/chargingws/v2"
 
 SHOP_NAME = "LoTuss's Schematic Shop"
@@ -41,6 +41,9 @@ def init_db():
                    user_id INTEGER, amount INTEGER, user_name TEXT, serial TEXT, code TEXT, telco TEXT, admin_msg_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS warranty 
                   (user_id INTEGER, guild_id INTEGER, expiry_timestamp REAL)''')
+    # Bảng theo dõi số lần nhập thẻ
+    c.execute('''CREATE TABLE IF NOT EXISTS card_attempts 
+                  (request_id TEXT PRIMARY KEY, attempts INTEGER DEFAULT 0)''')
     conn.commit()
     conn.close()
 
@@ -49,8 +52,19 @@ def save_order(request_id, channel_id, product, link, user_id, amount, user_name
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO orders (request_id, channel_id, product, link, user_id, amount, user_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
               (request_id, channel_id, product, link, user_id, amount, user_name))
+    c.execute("INSERT OR REPLACE INTO card_attempts (request_id, attempts) VALUES (?, 0)", (request_id,))
     conn.commit()
     conn.close()
+
+def add_attempt(request_id):
+    conn = sqlite3.connect('orders.db')
+    c = conn.cursor()
+    c.execute("UPDATE card_attempts SET attempts = attempts + 1 WHERE request_id = ?", (request_id,))
+    c.execute("SELECT attempts FROM card_attempts WHERE request_id = ?", (request_id,))
+    res = c.fetchone()
+    conn.commit()
+    conn.close()
+    return res[0] if res else 0
 
 def update_admin_msg(request_id, msg_id):
     conn = sqlite3.connect('orders.db')
@@ -74,6 +88,7 @@ def delete_order(request_id):
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
     c.execute("DELETE FROM orders WHERE request_id = ?", (request_id,))
+    c.execute("DELETE FROM card_attempts WHERE request_id = ?", (request_id,))
     conn.commit()
     conn.close()
 
@@ -116,7 +131,7 @@ class BuildCardSystem(commands.Cog):
         customer = self.bot.get_user(user_id)
         if customer:
             try:
-                dm_inv = discord.Embed(title="🧾 HÓA ĐƠN XÁC NHẬN DỊCH VỤ", color=0x2ECC71, timestamp=datetime.now())
+                dm_inv = discord.Embed(title="🧾 HÓA ĐƠN XÁC NHẬN DỊV VỤ", color=0x2ECC71, timestamp=datetime.now())
                 dm_inv.set_author(name=SHOP_NAME)
                 dm_inv.add_field(name="🆔 Mã hóa đơn", value=f"`BUILD-{request_id}`", inline=True)
                 dm_inv.add_field(name="💰 Tổng thanh toán", value=f"**{amount:,} VND**", inline=True)
@@ -191,7 +206,7 @@ class BuildCardSystem(commands.Cog):
             embed_log.add_field(name="💵 Tiền nhận", value=f"**{order['amount']:,} VND**", inline=False)
             await admin_ch.send(embed=embed_log)
 
-        embed_client = discord.Embed(title="🎊 CÔNG TRÌNH ĐÃ HOÀNH THÀNH!", color=0x00FFFF)
+        embed_client = discord.Embed(title="🎊 CÔNG TRÌNH ĐÃ HOÀN THÀNH!", color=0x00FFFF)
         embed_client.set_author(name=SHOP_NAME)
         embed_client.description = "Admin đã bàn giao xong công trình. Hẹn gặp lại bạn lần sau!"
         await ctx.send(content=f"<@{order['user_id']}>", embed=embed_client)
@@ -208,7 +223,7 @@ class BuildCardSystem(commands.Cog):
             except: pass
         delete_order(clean_id)
 
-# ===== VIEW & MODAL (GIỮ NGUYÊN) =====
+# ===== VIEW & MODAL =====
 class BuyView(discord.ui.View):
     def __init__(self, amount, order_id):
         super().__init__(timeout=None)
@@ -223,11 +238,7 @@ class BuyView(discord.ui.View):
 
 class TelcoSelect(discord.ui.Select):
     def __init__(self, order_id, amount):
-        # Đã thêm Garena, Vcoin, Scoin và loại bỏ số % trong ngoặc
-        options = [
-            discord.SelectOption(label=x, value=x.upper()) 
-            for x in ["Viettel", "Vinaphone", "Mobifone", "Garena", "Zing", "Vcoin", "Scoin"]
-        ]
+        options = [discord.SelectOption(label=x, value=x.upper()) for x in ["Viettel", "Vinaphone", "Mobifone", "Zing"]]
         super().__init__(placeholder="📡 Chọn nhà mạng", options=options)
         self.order_id, self.amount = order_id, amount
 
@@ -243,7 +254,16 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
         self.telco, self.amount, self.order_id = telco, amount, order_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message("⏳ Đã gửi thẻ! Hệ thống đang kiểm tra, vui lòng chờ trong giây lát...", ephemeral=True)
+        attempts = add_attempt(self.order_id)
+        
+        if attempts >= 3:
+            delete_order(self.order_id)
+            try:
+                await interaction.message.delete()
+            except: pass
+            return await interaction.response.send_message("❌ Bạn đã nhập sai quá 3 lần. Đơn hàng đã bị hủy để chống spam.", ephemeral=True)
+        
+        await interaction.response.send_message(f"⏳ Đã gửi thẻ (Lần {attempts}/3)! Hệ thống đang kiểm tra, vui lòng chờ trong giây lát...", ephemeral=True)
 
 # ===== HÀM SETUP CHO EXTENSION (FIX LỖI RAILWAY) =====
 async def setup(bot):
