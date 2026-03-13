@@ -4,9 +4,10 @@ import asyncio
 import random
 import string
 import urllib.parse
+import re
 from datetime import datetime
 
-# --- CẤU HÌNH ---
+# --- CẤU HÌNH ID ---
 BANK_CHANNEL_ID = 1479440469120389221          
 ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 
 SHOP_NAME = "LoTuss's Schematic Shop"
@@ -22,109 +23,176 @@ class BuildPaymentView(discord.ui.View):
         self.bot = bot
         self.info = order_code.replace("-", "").upper()
 
-    @discord.ui.button(label="💳 THANH TOÁN BANK", style=discord.ButtonStyle.green, emoji="💰")
+    @discord.ui.button(label="💳THANH TOÁN THUÊ BUILD NGAY", style=discord.ButtonStyle.green, emoji="💰")
     async def bank(self, interaction: discord.Interaction, button: discord.ui.Button):
         button.disabled = True
         button.label = "ĐÃ HIỆN MÃ QR"
         await interaction.message.edit(view=self)
 
-        # Cập nhật QR với STK và thông tin mới
-        qr_url = f"https://img.vietqr.io/image/MB-0764495919-qr_only.png?amount={self.price}&addInfo={self.info}"
+        safe_info = urllib.parse.quote(self.info)
+        qr_url = f"https://img.vietqr.io/image/MB-0764495919-compact2.png?amount={self.price}&addInfo={safe_info}"
         
-        embed = discord.Embed(title="🏦 CHUYỂN KHOẢN NGÂN HÀNG", color=0x00ff00)
-        embed.description = f"Vui lòng chuyển đúng số tiền và nội dung bên dưới để hệ thống tự động xác nhận."
-        embed.add_field(name="👤 Chủ TK", value="`NGUYEN THANH DAT`", inline=True)
-        embed.add_field(name="🔢 STK", value="`0764495919`", inline=True)
-        embed.add_field(name="🏦 Ngân hàng", value="`MBBank`", inline=True)
-        embed.add_field(name="💰 Số tiền", value=f"**{self.price:,} VND**", inline=True)
-        embed.add_field(name="📝 Nội dung", value=f"`{self.info}`", inline=True)
+        embed = discord.Embed(
+            title=f"💳 {SHOP_NAME} - THANH TOÁN",
+            description="Vui lòng thực hiện chuyển khoản chính xác thông tin để được hệ thống tự động xác nhận.",
+            color=0xF1C40F,
+            timestamp=datetime.now()
+        )
+        embed.add_field(name="🏗️ Dịch vụ", value="`Thuê Build Công Trình`", inline=True)
+        embed.add_field(name="💰 Tổng số tiền", value=f"**{self.price:,} VND**", inline=True)
+        embed.add_field(name="📝 Nội dung bắt buộc", value=f"`{self.info}`", inline=False)
+        embed.add_field(name="🛡️ Lưu ý", value="• Hệ thống duyệt tự động trong 30s - 2p.\n• Không đóng ticket khi chưa có xác nhận thành công.", inline=False)
         embed.set_image(url=qr_url)
         embed.set_footer(text=f"Cảm ơn bạn đã lựa chọn {SHOP_NAME}")
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
 class BuildSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="buildthuebank")
-    @commands.has_permissions(administrator=True)
-    async def buildthuebank(self, ctx, price: int):
-        await ctx.message.delete()
-        
-        # Tạo mã đơn 6 ký tự ngẫu nhiên
-        order_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        product_name = ctx.channel.name.replace("-", " ").upper()
-        
-        embed = discord.Embed(title=f"🏗️ {SHOP_NAME} - DỊCH VỤ BUILD", color=0x3498DB)
-        embed.add_field(name="📦 Công trình", value=f"`{product_name}`", inline=False)
-        embed.add_field(name="💵 Chi phí", value=f"**{price:,} VND**", inline=True)
-        embed.add_field(name="🆔 Mã đơn", value=f"`BUILD-{order_code}`", inline=True)
-        embed.set_footer(text="Nhấn nút bên dưới để lấy thông tin thanh toán.")
-
-        view = BuildPaymentView(price, order_code, self.bot)
-        await ctx.send(embed=embed, view=view)
-        
-        # Lưu vào danh sách chờ
-        bank_waiting[order_code] = {
-            "user": ctx.author.id, 
-            "price": price,
-            "channel": ctx.channel.id,
-            "code": order_code,
-            "product": product_name
-        }
-
-    @commands.command(name="dathuebank")
-    @commands.has_permissions(administrator=True)
-    async def dathuebank(self, ctx, order_id: str):
-        await ctx.message.delete()
-        code = order_id.upper().replace("BUILD-", "").strip()
-        
-        if code in bank_waiting:
-            order_data = bank_waiting.pop(code)
-            active_orders[ctx.channel.id] = order_data
+    async def confirm_order(self, order_id, manual_ctx=None):
+        """
+        Xác nhận đơn hàng (Dùng cho cả Auto Bank và Lệnh duyệt thủ công).
+        """
+        full_code = f"BUILD-{order_id}"
+        if full_code in bank_waiting:
+            data = bank_waiting[full_code]
+            del bank_waiting[full_code]
             
-            embed = discord.Embed(title="✅ XÁC NHẬN THANH TOÁN", color=0x2ECC71)
-            embed.description = f"Đã nhận thanh toán cho đơn `BUILD-{code}`. Admin đang tiến hành thực hiện!"
-            await ctx.send(content=f"<@{order_data['user']}>", embed=embed)
+            # 1. Thông báo cho Admin (Màu cam)
+            admin_ch = self.bot.get_channel(ADMIN_TRACKING_CHANNEL_ID)
+            admin_msg_id = None
+            if admin_ch:
+                embed_ad = discord.Embed(title="👷 ĐƠN THUÊ BUILD MỚI CẦN XỬ LÝ", color=0xE67E22, timestamp=datetime.now())
+                embed_ad.set_author(name=SHOP_NAME)
+                embed_ad.add_field(name="👤 Khách hàng", value=f"<@{data['user']}>", inline=True)
+                embed_ad.add_field(name="🆔 Mã đơn", value=f"`{order_id}`", inline=True)
+                embed_ad.add_field(name="💰 Doanh thu", value=f"**{data['price']:,} VND**", inline=True)
+                embed_ad.add_field(name="📍 Kênh Ticket", value=f"<#{data['channel']}>", inline=False)
+                
+                # Chỉnh sửa Footer nếu là duyệt thủ công
+                footer_text = f"Duyệt thủ công bởi {manual_ctx.author.name}" if manual_ctx else "Dùng lệnh !xong tại ticket sau khi hoàn tất."
+                embed_ad.set_footer(text=footer_text)
+                
+                admin_msg = await admin_ch.send(embed=embed_ad)
+                admin_msg_id = admin_msg.id
+
+            active_orders[data["channel"]] = {
+                "code": order_id, "user": data["user"], "price": data["price"], "admin_msg_id": admin_msg_id
+            }
             
-            # Gửi DM báo khách
-            customer = self.bot.get_user(order_data['user'])
+            # 2. Hóa đơn DMs gửi cho khách
+            customer = self.bot.get_user(data["user"])
             if customer:
                 try:
-                    dm = discord.Embed(title="🧾 HÓA ĐƠN THANH TOÁN", color=0x2ECC71, timestamp=datetime.now())
-                    dm.add_field(name="🆔 Mã đơn", value=f"`BUILD-{code}`", inline=True)
-                    dm.add_field(name="💰 Số tiền", value=f"**{order_data['price']:,} VND**", inline=True)
-                    dm.set_footer(text=f"Dịch vụ từ {SHOP_NAME}")
-                    await customer.send(embed=dm)
+                    dm_inv = discord.Embed(title="🧾 HÓA ĐƠN XÁC NHẬN DỊCH VỤ", color=0x2ECC71, timestamp=datetime.now())
+                    dm_inv.set_author(name=SHOP_NAME)
+                    dm_inv.add_field(name="🆔 Mã hóa đơn", value=f"`BUILD-{order_id}`", inline=True)
+                    dm_inv.add_field(name="💰 Tổng thanh toán", value=f"**{data['price']:,} VND**", inline=True)
+                    dm_inv.add_field(name="🚀 Trạng thái", value="`Đang xử lý` ✅", inline=True)
+                    dm_inv.set_footer(text="Hệ thống sẽ thông báo khi công trình hoàn tất.")
+                    await customer.send(embed=dm_inv)
                 except: pass
-        else:
-            await ctx.send(f"❌ Không tìm thấy mã đơn `BUILD-{code}`.", delete_after=5)
 
-    @commands.command(name="xongbank")
+            # 3. Thông báo tại Ticket
+            client_chan = self.bot.get_channel(data["channel"])
+            if client_chan:
+                # Giữ nguyên Embed theo yêu cầu
+                embed_ok = discord.Embed(title="✅ THANH TOÁN THÀNH CÔNG", color=0x2ECC71)
+                embed_ok.add_field(name="💰 Số tiền", value=f"`{data['price']:,} VND`", inline=True)
+                embed_ok.add_field(name="🆔 Mã đơn", value=f"`{order_id}`", inline=True)
+                embed_ok.description = "Admin đang duyệt và sẽ thông báo với bạn sau khi có thời gian nhé"
+                await client_chan.send(content=f"<@{data['user']}>", embed=embed_ok)
+
+            return True
+        return False
+
+    @commands.command(name="thuebuild")
     @commands.has_permissions(administrator=True)
-    async def xongbank(self, ctx):
+    async def thuebuild(self, ctx, price: int):
+        await ctx.message.delete()
+        random_id = ''.join(random.choices(string.digits, k=5))
+        order_code = f"BUILD-{random_id}"
+        target_user = next((m for m in ctx.channel.members if not m.bot and not m.guild_permissions.administrator), ctx.author)
+        bank_waiting[order_code] = {"channel": ctx.channel.id, "price": price, "user": target_user.id}
+        
+        embed = discord.Embed(title="🏗️ KHỞI TẠO ĐƠN THUÊ BUILD", color=0x3498DB, timestamp=datetime.now())
+        embed.set_author(name=SHOP_NAME)
+        embed.add_field(name="👤 Khách hàng", value=target_user.mention, inline=True)
+        embed.add_field(name="🆔 Mã đơn", value=f"`{order_code}`", inline=True)
+        embed.add_field(name="💰 Giá tiền", value=f"**{price:,} VND**", inline=True)
+        await ctx.send(content=target_user.mention, embed=embed, view=BuildPaymentView(price, order_code, self.bot))
+
+    @commands.command(name="dathue")
+    @commands.has_permissions(administrator=True)
+    async def dathue(self, ctx, order_id: str):
+        """Duyệt đơn thủ công khi bank auto gặp sự cố."""
+        await ctx.message.delete()
+        # Chuẩn hóa để chỉ lấy 5 số cuối của ID
+        clean_id = order_id.upper().replace("BUILD-", "").replace("BUILD", "").strip()
+        
+        if await self.confirm_order(clean_id, manual_ctx=ctx):
+            await ctx.send(f"✅ Đã duyệt thủ công đơn hàng `BUILD-{clean_id}` thành công.", delete_after=5)
+        else:
+            await ctx.send(f"❌ Không tìm thấy mã đơn `{order_id}` trong hàng chờ thanh toán.", delete_after=10)
+
+    @commands.command(name="xong")
+    @commands.has_permissions(administrator=True)
+    async def xong(self, ctx):
         await ctx.message.delete()
         if ctx.channel.id not in active_orders:
-            return await ctx.send("❌ Kênh này không có đơn build nào đang xử lý.", delete_after=5)
-            
-        order_data = active_orders.pop(ctx.channel.id)
+            return await ctx.send("❌ Kênh này không có đơn build nào.", delete_after=5)
         
-        # Thông báo hoàn tất tại kênh
-        embed = discord.Embed(title="🎊 HOÀN TẤT CÔNG TRÌNH", color=0x00FFFF)
-        embed.description = "Admin đã bàn giao xong. Cảm ơn bạn đã tin tưởng shop!"
-        embed.set_footer(text=f"Hẹn gặp lại bạn tại {SHOP_NAME}")
-        await ctx.send(content=f"<@{order_data['user']}>", embed=embed)
+        order_data = active_orders[ctx.channel.id]
         
-        # Gửi biên lai DM
-        customer = self.bot.get_user(order_data['user'])
+        # Xóa dòng cam ở Admin
+        admin_ch = self.bot.get_channel(ADMIN_TRACKING_CHANNEL_ID)
+        if admin_ch and order_data["admin_msg_id"]:
+            try:
+                old_msg = await admin_ch.fetch_message(order_data["admin_msg_id"])
+                await old_msg.delete()
+            except: pass
+
+        # Log hoàn tất cho Admin (Màu xanh lá)
+        if admin_ch:
+            embed_log = discord.Embed(title="📊 LOG: ĐƠN HÀNG ĐÃ HOÀN TẤT", color=0x27AE60, timestamp=datetime.now())
+            embed_log.add_field(name="🆔 Mã đơn", value=f"`{order_data['code']}`", inline=True)
+            embed_log.add_field(name="👷 Người thực hiện", value=ctx.author.mention, inline=True)
+            embed_log.add_field(name="💵 Tiền nhận", value=f"**{order_data['price']:,} VND**", inline=False)
+            await admin_ch.send(embed=embed_log)
+
+        # Thông báo tại Ticket
+        embed_client = discord.Embed(title="🎊 CÔNG TRÌNH ĐÃ HOÀN THÀNH!", color=0x00FFFF)
+        embed_client.set_author(name=SHOP_NAME)
+        embed_client.add_field(name="🆔 Mã đơn", value=f"`{order_data['code']}`", inline=True)
+        embed_client.add_field(name="👷 Admin", value=ctx.author.name, inline=True)
+        embed_client.description = "Admin đã bàn giao xong công trình. Hẹn gặp lại bạn lần sau!"
+        await ctx.send(content=f"<@{order_data['user']}>", embed=embed_client)
+
+        # Biên lai DMs cho khách
+        customer = self.bot.get_user(order_data["user"])
         if customer:
             try:
-                dm = discord.Embed(title="📦 BIÊN LAI BÀN GIAO", color=0x2ECC71, timestamp=datetime.now())
-                dm.add_field(name="🆔 Mã đơn", value=f"`BUILD-{order_data['code']}`", inline=True)
-                dm.add_field(name="💰 Tổng tiền", value=f"**{order_data['price']:,} VND**", inline=True)
-                await customer.send(embed=dm)
+                dm_done = discord.Embed(title="📦 BIÊN LAI BÀN GIAO", color=0x2ECC71, timestamp=datetime.now())
+                dm_done.set_author(name=SHOP_NAME)
+                dm_done.add_field(name="🆔 Mã đơn", value=f"`BUILD-{order_data['code']}`", inline=True)
+                dm_done.add_field(name="💰 Tổng tiền", value=f"**{order_data['price']:,} VND**", inline=True)
+                dm_done.set_footer(text="Cảm ơn bạn đã tin tưởng dịch vụ của chúng tôi!")
+                await customer.send(embed=dm_done)
             except: pass
+
+        del active_orders[ctx.channel.id]
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot and message.channel.id != BANK_CHANNEL_ID: return
+        if message.channel.id == BANK_CHANNEL_ID:
+            content = message.content.upper().replace(" ", "").replace("-", "")
+            matches = re.findall(r"BUILD(\d{5})", content)
+            if matches:
+                if await self.confirm_order(matches[-1]):
+                    await message.add_reaction("✅")
 
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
