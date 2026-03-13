@@ -16,7 +16,7 @@ PARTNER_KEY = "c63d72291473a68fcbb23261491a103f"
 API_URL = "https://gachthe1s.com/chargingws/v2"
 SHOP_NAME = "LoTuss's Schematic Shop"
 CATEGORY_NAME = "orders-card"
-HISTORY_CHANNEL_ID = 1481239066115571885 # Kênh Log hoàn tất đơn thẻ
+HISTORY_CHANNEL_ID = 1481239066115571885 
 
 app = FastAPI()
 
@@ -77,7 +77,6 @@ class CardModal(discord.ui.Modal, title="💳 NHẬP THÔNG TIN THẺ CÀO"):
         if str(result.get("status")) in ["1", "99"]:
             await interaction.followup.send(f"✅ Gửi thẻ thành công! Đang đợi duyệt đơn `CARD-{self.order_id}`.", ephemeral=True)
             
-            # Đồng bộ Embed thông báo thành công với hệ thống Build
             embed_ok = discord.Embed(title="✅ THANH TOÁN THÀNH CÔNG", color=0x2ECC71)
             embed_ok.add_field(name="💰 Số tiền", value=f"`{self.amount:,} VND`", inline=True)
             embed_ok.add_field(name="🆔 Mã đơn", value=f"`CARD-{self.order_id}`", inline=True)
@@ -89,17 +88,16 @@ class CardModal(discord.ui.Modal, title="💳 NHẬP THÔNG TIN THẺ CÀO"):
 
 class TelcoSelect(discord.ui.Select):
     def __init__(self, order_id, amount):
-        # Thiết kế placeholder và options giống hệt hình ảnh bạn gửi
+        # Cập nhật nhà mạng có kèm % chiết khấu giống hình mẫu
         options = [
-            discord.SelectOption(label="Viettel", value="Viettel"),
-            discord.SelectOption(label="Garena", value="Garena"),
-            discord.SelectOption(label="Vinaphone", value="Vinaphone"),
-            discord.SelectOption(label="Zing", value="Zing"),
-            discord.SelectOption(label="Mobifone", value="Mobifone"),
-            discord.SelectOption(label="Vcoin", value="Vcoin"),
-            discord.SelectOption(label="Scoin", value="Scoin")
+            discord.SelectOption(label="Viettel (8%)", value="Viettel"),
+            discord.SelectOption(label="Garena (Auto11%)", value="Garena"),
+            discord.SelectOption(label="Vinaphone (8%)", value="Vinaphone"),
+            discord.SelectOption(label="Zing (Auto 12)", value="Zing"),
+            discord.SelectOption(label="Mobifone (16%)", value="Mobifone"),
+            discord.SelectOption(label="Vcoin (8%)", value="Vcoin"),
+            discord.SelectOption(label="Scoin (28%)", value="Scoin")
         ]
-        # Thêm mệnh giá vào placeholder cho chuyên nghiệp
         super().__init__(placeholder=f"📡 Chọn nhà mạng (mệnh giá {amount:,} VND)", options=options)
         self.order_id, self.amount = order_id, amount
 
@@ -136,11 +134,11 @@ class BuyButton(discord.ui.View):
 class CardSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.active_card_orders = {} # Theo dõi đơn đang thực hiện
+        self.active_card_orders = {}
 
-    @commands.command(name="sellcard")
+    @commands.command(name="buildthuecard") # Đã đổi tên lệnh theo yêu cầu
     @commands.has_permissions(administrator=True)
-    async def sellcard(self, ctx, amount: int):
+    async def buildthuecard(self, ctx, amount: int):
         await ctx.message.delete()
         product = ctx.channel.name.upper()
         embed = discord.Embed(title="🛒 THANH TOÁN QUA THẺ CÀO", description=f"📦 **Hàng:** `{product}`\n💰 **Giá:** `{amount:,} VND`", color=0x3498DB)
@@ -150,34 +148,46 @@ class CardSystem(commands.Cog):
     @commands.command(name="dacard")
     @commands.has_permissions(administrator=True)
     async def dacard(self, ctx, request_id: str):
-        """Duyệt thẻ thủ công tương tự !dathue"""
         await ctx.message.delete()
         clean_id = request_id.upper().replace("CARD-", "").strip()
         order = get_order(clean_id)
         if order:
+            # 1. Thông báo tại Ticket
             embed_ok = discord.Embed(title="✅ THANH TOÁN THÀNH CÔNG (THỦ CÔNG)", color=0x2ECC71)
             embed_ok.add_field(name="💰 Số tiền", value=f"`{order['amount']:,} VND`", inline=True)
             embed_ok.add_field(name="🆔 Mã đơn", value=f"`CARD-{clean_id}`", inline=True)
             embed_ok.description = "Admin đã duyệt thẻ thủ công. Đơn hàng của bạn đang được xử lý!"
             embed_ok.set_footer(text=f"Cảm ơn bạn đã lựa chọn {SHOP_NAME}")
-            
             await ctx.send(content=f"<@{order['user_id']}>", embed=embed_ok)
+
+            # 2. DMs báo cho khách
+            customer = self.bot.get_user(order['user_id'])
+            if customer:
+                try:
+                    dm_inv = discord.Embed(title="🧾 HÓA ĐƠN XÁC NHẬN NẠP THẺ", color=0x2ECC71, timestamp=datetime.now())
+                    dm_inv.set_author(name=SHOP_NAME)
+                    dm_inv.add_field(name="🆔 Mã hóa đơn", value=f"`CARD-{clean_id}`", inline=True)
+                    dm_inv.add_field(name="💰 Tổng nạp", value=f"**{order['amount']:,} VND**", inline=True)
+                    dm_inv.add_field(name="🚀 Trạng thái", value="`Đang xử lý` ✅", inline=True)
+                    dm_inv.set_footer(text="Hệ thống sẽ thông báo khi đơn hàng hoàn tất.")
+                    await customer.send(embed=dm_inv)
+                except: pass
+
             self.active_card_orders[ctx.channel.id] = order
-            await ctx.send(f"✅ Đã duyệt thủ công đơn `CARD-{clean_id}`.", delete_after=5)
+            await ctx.send(f"✅ Đã duyệt đơn `CARD-{clean_id}`.", delete_after=5)
         else:
             await ctx.send(f"❌ Không tìm thấy mã đơn `{request_id}`.", delete_after=5)
 
     @commands.command(name="xongcard")
     @commands.has_permissions(administrator=True)
     async def xongcard(self, ctx):
-        """Hoàn tất đơn hàng tương tự !xong"""
         await ctx.message.delete()
         if ctx.channel.id not in self.active_card_orders:
             return await ctx.send("❌ Kênh này không có đơn nạp thẻ nào đang xử lý.", delete_after=5)
         
         order_data = self.active_card_orders[ctx.channel.id]
         
-        # Log hoàn tất cho Admin
+        # 1. Log hoàn tất cho Admin
         admin_ch = self.bot.get_channel(HISTORY_CHANNEL_ID)
         if admin_ch:
             embed_log = discord.Embed(title="📊 LOG: NẠP THẺ HOÀN TẤT", color=0x27AE60, timestamp=datetime.now())
@@ -186,12 +196,24 @@ class CardSystem(commands.Cog):
             embed_log.add_field(name="💵 Tiền nhận", value=f"**{order_data['amount']:,} VND**", inline=False)
             await admin_ch.send(embed=embed_log)
 
-        # Thông báo hoàn tất tại Ticket
+        # 2. Thông báo Ticket
         embed_client = discord.Embed(title="🎊 ĐƠN HÀNG ĐÃ HOÀN TẤT!", color=0x00FFFF)
         embed_client.set_author(name=SHOP_NAME)
         embed_client.description = "Admin đã bàn giao xong. Cảm ơn bạn đã tin tưởng dịch vụ!"
         embed_client.set_footer(text=f"Cảm ơn bạn đã lựa chọn {SHOP_NAME}")
         await ctx.send(content=f"<@{order_data['user_id']}>", embed=embed_client)
+
+        # 3. Biên lai DMs cho khách
+        customer = self.bot.get_user(order_data["user_id"])
+        if customer:
+            try:
+                dm_done = discord.Embed(title="📦 BIÊN LAI HOÀN TẤT", color=0x2ECC71, timestamp=datetime.now())
+                dm_done.set_author(name=SHOP_NAME)
+                dm_done.add_field(name="🆔 Mã đơn", value=f"`CARD-{order_data['request_id']}`", inline=True)
+                dm_done.add_field(name="💰 Tổng tiền", value=f"**{order_data['amount']:,} VND**", inline=True)
+                dm_done.set_footer(text="Cảm ơn bạn đã tin tưởng dịch vụ của chúng tôi!")
+                await customer.send(embed=dm_done)
+            except: pass
 
         delete_order(order_data['request_id'])
         del self.active_card_orders[ctx.channel.id]
@@ -199,9 +221,7 @@ class CardSystem(commands.Cog):
 # --- CALLBACK ---
 @app.api_route("/callback", methods=["GET", "POST"])
 async def callback(request: Request):
-    # Logic xử lý callback từ gachthe1s.com
     return {"status": 1, "message": "success"}
 
 async def setup(bot):
     await bot.add_cog(CardSystem(bot))
-
