@@ -89,14 +89,18 @@ class CardModal(discord.ui.Modal, title="💳 NHẬP THÔNG TIN THẺ CÀO"):
 
 class TelcoSelect(discord.ui.Select):
     def __init__(self, order_id, amount):
+        # Thiết kế placeholder và options giống hệt hình ảnh bạn gửi
         options = [
-            discord.SelectOption(label="Viettel (8%)", value="Viettel", emoji="🔴"),
-            discord.SelectOption(label="Garena (11%)", value="Garena", emoji="🎮"),
-            discord.SelectOption(label="Vinaphone (8%)", value="Vinaphone", emoji="🔵"),
-            discord.SelectOption(label="Zing (12%)", value="Zing", emoji="🟢"),
-            discord.SelectOption(label="Mobifone (16%)", value="Mobifone", emoji="🟡")
+            discord.SelectOption(label="Viettel", value="Viettel"),
+            discord.SelectOption(label="Garena", value="Garena"),
+            discord.SelectOption(label="Vinaphone", value="Vinaphone"),
+            discord.SelectOption(label="Zing", value="Zing"),
+            discord.SelectOption(label="Mobifone", value="Mobifone"),
+            discord.SelectOption(label="Vcoin", value="Vcoin"),
+            discord.SelectOption(label="Scoin", value="Scoin")
         ]
-        super().__init__(placeholder="📡 Chọn nhà mạng nạp thẻ", options=options)
+        # Thêm mệnh giá vào placeholder cho chuyên nghiệp
+        super().__init__(placeholder=f"📡 Chọn nhà mạng (mệnh giá {amount:,} VND)", options=options)
         self.order_id, self.amount = order_id, amount
 
     async def callback(self, interaction: discord.Interaction):
@@ -200,3 +204,4 @@ async def callback(request: Request):
 
 async def setup(bot):
     await bot.add_cog(CardSystem(bot))
+
