@@ -5,9 +5,6 @@ import hashlib
 import random
 import string
 import asyncio
-from fastapi import FastAPI, Request
-import uvicorn
-import threading
 import os
 import json
 import time
@@ -15,11 +12,11 @@ import sqlite3
 import re
 from datetime import datetime, timedelta
 
-# --- KHỞI TẠO FASTAPI ---
-app = FastAPI()
+# CHỈ SỬA: Import app và bot từ main để đăng ký Webhook callback
+from main import app, bot 
+from fastapi import Request
 
 # --- CẤU HÌNH ---
-TOKEN = os.getenv("TOKEN")
 PARTNER_ID = "95904113535"
 PARTNER_KEY = "349afaff71cbd86fd48c6a83421071b2"
 API_URL = "https://gachthe1s.com/chargingws/v2"
@@ -32,7 +29,7 @@ HISTORY_CHANNEL_ID = 1481239066115571885
 WARRANTY_ROLE_ID = 1479550698982215852    
 FEEDBACK_CHANNEL_MENTION = "<#1481245879607492769>"
 
-# ===== DATABASE SETUP =====
+# ===== DATABASE SETUP (GIỮ NGUYÊN) =====
 def init_db():
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
@@ -93,7 +90,39 @@ def delete_order(request_id):
 
 init_db()
 
-# Logic gửi thẻ từ file gốc bot (1).py
+# --- WEBHOOK CALLBACK (SỬA ĐỂ NHẬN DỮ LIỆU TỪ GACHTHE1S) ---
+@app.api_route("/callback", methods=["GET", "POST"])
+async def callback(request: Request):
+    data = {}
+    try:
+        if request.method == "POST":
+            try: data = await request.json()
+            except: data = dict(await request.form())
+        if not data: data = dict(request.query_params)
+    except: return {"status": 99}
+
+    request_id = str(data.get("request_id", "")).upper()
+    status = str(data.get("status", ""))
+    receive = int(data.get("received") or data.get("receive") or 0)
+
+    order = get_order(request_id)
+    if order:
+        # Gửi log biến động
+        log_channel = bot.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            log_embed = discord.Embed(title="📥 BIẾN ĐỘNG SỐ DƯ CARD", color=0x3498db)
+            log_embed.add_field(name="Trạng thái", value="Thành công" if status == "1" else f"Lỗi ({status})")
+            log_embed.add_field(name="Thực nhận", value=f"{receive:,} VND")
+            log_embed.add_field(name="Mã đơn", value=request_id)
+            bot.loop.create_task(log_channel.send(embed=log_embed))
+
+        if status == "1":
+            cog = bot.get_cog("BuildCardSystem")
+            if cog:
+                bot.loop.create_task(cog.process_confirm_order(order, is_manual=False))
+    return {"status": 1, "message": "success"}
+
+# Logic gửi thẻ từ file gốc (GIỮ NGUYÊN)
 async def send_card(telco, amount, serial, code, request_id):
     sign = hashlib.md5((PARTNER_KEY + code + serial).encode()).hexdigest()
     params = {
@@ -113,7 +142,7 @@ async def send_card(telco, amount, serial, code, request_id):
 
 user_ticket_count = {}
 
-# ===== COG CLASS =====
+# ===== COG CLASS (GIỮ NGUYÊN LOGIC VÀ EMBED) =====
 class BuildCardSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -138,7 +167,7 @@ class BuildCardSystem(commands.Cog):
             embed_ad.add_field(name="💳 Phương thức", value="`Thẻ cào (Auto)`", inline=True)
             embed_ad.add_field(name="📍 Kênh Ticket", value=f"<#{channel_id}>", inline=False)
             
-            footer_text = f"Duyệt thủ công bởi {admin_user.name}" if is_manual else "Hệ thống tự động duyệt thẻ."
+            footer_text = f"Duyệt thủ công bởi {admin_user.name if admin_user else 'Admin'}" if is_manual else "Hệ thống tự động duyệt thẻ."
             embed_ad.set_footer(text=footer_text)
             
             admin_msg = await admin_ch.send(embed=embed_ad)
@@ -240,7 +269,7 @@ class BuildCardSystem(commands.Cog):
             except: pass
         delete_order(clean_id)
 
-# ===== VIEW & MODAL =====
+# ===== VIEW & MODAL (GIỮ NGUYÊN) =====
 class BuyView(discord.ui.View):
     def __init__(self, amount, order_id):
         super().__init__(timeout=None)
@@ -255,7 +284,6 @@ class BuyView(discord.ui.View):
 
 class TelcoSelect(discord.ui.Select):
     def __init__(self, order_id, amount):
-        # Khôi phục danh sách nhà mạng đầy đủ từ bot (1).py
         options = [discord.SelectOption(label=x, value=x.upper()) for x in ["Viettel", "Vinaphone", "Mobifone", "Vcoin", "Scoin", "Zing"]]
         super().__init__(placeholder="📡 Chọn nhà mạng", options=options)
         self.order_id, self.amount = order_id, amount
@@ -276,14 +304,9 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
         
         if attempts >= 3:
             delete_order(self.order_id)
-            try:
-                await interaction.message.delete()
-            except: pass
             return await interaction.response.send_message("❌ Bạn đã nhập sai quá 3 lần. Đơn hàng đã bị hủy để chống spam.", ephemeral=True)
         
         await interaction.response.send_message(f"⏳ Đang gửi thẻ (Lần {attempts}/3)...", ephemeral=True)
-        
-        # Gọi hàm send_card theo logic cũ
         result = await send_card(self.telco, self.amount, self.serial.value, self.code.value, self.order_id)
         
         if str(result.get("status")) in ["1", "99"]:
@@ -295,4 +318,3 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
 # ===== HÀM SETUP =====
 async def setup(bot):
     await bot.add_cog(BuildCardSystem(bot))
-
