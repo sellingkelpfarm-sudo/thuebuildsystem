@@ -8,12 +8,12 @@ import re
 from datetime import datetime
 
 # --- CẤU HÌNH ID ---
-BANK_CHANNEL_ID = 1479440469120389221         
+BANK_CHANNEL_ID = 1479440469120389221          
 ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 
 SHOP_NAME = "LoTuss's Schematic Shop"
 
-bank_waiting = {}  
-active_orders = {} 
+bank_waiting = {}   
+active_orders = {}  
 
 class BuildPaymentView(discord.ui.View):
     def __init__(self, price, order_code, bot):
@@ -51,7 +51,10 @@ class BuildSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def confirm_order(self, order_id):
+    async def confirm_order(self, order_id, manual_ctx=None):
+        """
+        Xác nhận đơn hàng (Dùng cho cả Auto Bank và Lệnh duyệt thủ công).
+        """
         full_code = f"BUILD-{order_id}"
         if full_code in bank_waiting:
             data = bank_waiting[full_code]
@@ -67,7 +70,11 @@ class BuildSystem(commands.Cog):
                 embed_ad.add_field(name="🆔 Mã đơn", value=f"`{order_id}`", inline=True)
                 embed_ad.add_field(name="💰 Doanh thu", value=f"**{data['price']:,} VND**", inline=True)
                 embed_ad.add_field(name="📍 Kênh Ticket", value=f"<#{data['channel']}>", inline=False)
-                embed_ad.set_footer(text="Dùng lệnh !xong tại ticket sau khi hoàn tất.")
+                
+                # Chỉnh sửa Footer nếu là duyệt thủ công
+                footer_text = f"Duyệt thủ công bởi {manual_ctx.author.name}" if manual_ctx else "Dùng lệnh !xong tại ticket sau khi hoàn tất."
+                embed_ad.set_footer(text=footer_text)
+                
                 admin_msg = await admin_ch.send(embed=embed_ad)
                 admin_msg_id = admin_msg.id
 
@@ -91,6 +98,7 @@ class BuildSystem(commands.Cog):
             # 3. Thông báo tại Ticket
             client_chan = self.bot.get_channel(data["channel"])
             if client_chan:
+                # Giữ nguyên Embed theo yêu cầu
                 embed_ok = discord.Embed(title="✅ THANH TOÁN THÀNH CÔNG", color=0x2ECC71)
                 embed_ok.add_field(name="💰 Số tiền", value=f"`{data['price']:,} VND`", inline=True)
                 embed_ok.add_field(name="🆔 Mã đơn", value=f"`{order_id}`", inline=True)
@@ -115,6 +123,19 @@ class BuildSystem(commands.Cog):
         embed.add_field(name="🆔 Mã đơn", value=f"`{order_code}`", inline=True)
         embed.add_field(name="💰 Giá tiền", value=f"**{price:,} VND**", inline=True)
         await ctx.send(content=target_user.mention, embed=embed, view=BuildPaymentView(price, order_code, self.bot))
+
+    @commands.command(name="dathue")
+    @commands.has_permissions(administrator=True)
+    async def dathue(self, ctx, order_id: str):
+        """Duyệt đơn thủ công khi bank auto gặp sự cố."""
+        await ctx.message.delete()
+        # Chuẩn hóa để chỉ lấy 5 số cuối của ID
+        clean_id = order_id.upper().replace("BUILD-", "").replace("BUILD", "").strip()
+        
+        if await self.confirm_order(clean_id, manual_ctx=ctx):
+            await ctx.send(f"✅ Đã duyệt thủ công đơn hàng `BUILD-{clean_id}` thành công.", delete_after=5)
+        else:
+            await ctx.send(f"❌ Không tìm thấy mã đơn `{order_id}` trong hàng chờ thanh toán.", delete_after=10)
 
     @commands.command(name="xong")
     @commands.has_permissions(administrator=True)
@@ -175,4 +196,3 @@ class BuildSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
-
