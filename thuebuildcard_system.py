@@ -15,7 +15,7 @@ import sqlite3
 import re
 from datetime import datetime, timedelta
 
-# --- KHỞI TẠO FASTAPI (Sửa lỗi ImportError: cannot import name 'app') ---
+# --- KHỞI TẠO FASTAPI ---
 app = FastAPI()
 
 # --- CẤU HÌNH ---
@@ -29,7 +29,7 @@ CATEGORY_NAME = "orders-card"
 LOG_CHANNEL_ID = 1479880771274674259 
 ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 
 HISTORY_CHANNEL_ID = 1481239066115571885 
-WARRANTY_ROLE_ID = 1479550698982215852   
+WARRANTY_ROLE_ID = 1479550698982215852    
 FEEDBACK_CHANNEL_MENTION = "<#1481245879607492769>"
 
 # ===== DATABASE SETUP =====
@@ -41,7 +41,6 @@ def init_db():
                    user_id INTEGER, amount INTEGER, user_name TEXT, serial TEXT, code TEXT, telco TEXT, admin_msg_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS warranty 
                   (user_id INTEGER, guild_id INTEGER, expiry_timestamp REAL)''')
-    # Bảng theo dõi số lần nhập thẻ
     c.execute('''CREATE TABLE IF NOT EXISTS card_attempts 
                   (request_id TEXT PRIMARY KEY, attempts INTEGER DEFAULT 0)''')
     conn.commit()
@@ -94,9 +93,27 @@ def delete_order(request_id):
 
 init_db()
 
+# Logic gửi thẻ từ file gốc bot (1).py
+async def send_card(telco, amount, serial, code, request_id):
+    sign = hashlib.md5((PARTNER_KEY + code + serial).encode()).hexdigest()
+    params = {
+        "partner_id": PARTNER_ID,
+        "request_id": request_id,
+        "telco": telco.upper(),
+        "code": code,
+        "serial": serial,
+        "amount": amount,
+        "command": "charging",
+        "sign": sign
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(API_URL, params=params) as resp:
+            try: return await resp.json()
+            except: return {"status": "0", "message": "Lỗi kết nối API"}
+
 user_ticket_count = {}
 
-# ===== COG CLASS ĐỂ ĐÓNG GÓI EXTENSION =====
+# ===== COG CLASS =====
 class BuildCardSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -238,7 +255,8 @@ class BuyView(discord.ui.View):
 
 class TelcoSelect(discord.ui.Select):
     def __init__(self, order_id, amount):
-        options = [discord.SelectOption(label=x, value=x.upper()) for x in ["Viettel", "Vinaphone", "Mobifone", "Zing"]]
+        # Khôi phục danh sách nhà mạng đầy đủ từ bot (1).py
+        options = [discord.SelectOption(label=x, value=x.upper()) for x in ["Viettel", "Vinaphone", "Mobifone", "Vcoin", "Scoin", "Zing"]]
         super().__init__(placeholder="📡 Chọn nhà mạng", options=options)
         self.order_id, self.amount = order_id, amount
 
@@ -263,9 +281,17 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
             except: pass
             return await interaction.response.send_message("❌ Bạn đã nhập sai quá 3 lần. Đơn hàng đã bị hủy để chống spam.", ephemeral=True)
         
-        await interaction.response.send_message(f"⏳ Đã gửi thẻ (Lần {attempts}/3)! Hệ thống đang kiểm tra, vui lòng chờ trong giây lát...", ephemeral=True)
+        await interaction.response.send_message(f"⏳ Đang gửi thẻ (Lần {attempts}/3)...", ephemeral=True)
+        
+        # Gọi hàm send_card theo logic cũ
+        result = await send_card(self.telco, self.amount, self.serial.value, self.code.value, self.order_id)
+        
+        if str(result.get("status")) in ["1", "99"]:
+            await interaction.followup.send("✅ Đã gửi thẻ thành công, vui lòng chờ hệ thống kiểm tra.", ephemeral=True)
+        else:
+            msg = result.get("message", "Thẻ không hợp lệ")
+            await interaction.followup.send(f"❌ Lỗi: {msg}. Bạn còn {3-attempts} lần thử.", ephemeral=True)
 
-# ===== HÀM SETUP CHO EXTENSION (FIX LỖI RAILWAY) =====
+# ===== HÀM SETUP =====
 async def setup(bot):
     await bot.add_cog(BuildCardSystem(bot))
-
