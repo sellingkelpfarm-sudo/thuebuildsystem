@@ -10,6 +10,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     print(f"🤖 Bot Thuê Build đã sẵn sàng: {bot.user}")
     await bot.load_extension("thuebuildsystem")
+    await bot.load_extension("thuebuildcard_system")
 
 if __name__ == "__main__":
+
     bot.run(TOKEN)
