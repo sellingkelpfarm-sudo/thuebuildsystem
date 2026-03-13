@@ -15,6 +15,9 @@ import sqlite3
 import re
 from datetime import datetime, timedelta
 
+# --- KHỞI TẠO FASTAPI (Sửa lỗi ImportError: cannot import name 'app') ---
+app = FastAPI()
+
 # --- CẤU HÌNH ---
 TOKEN = os.getenv("TOKEN")
 PARTNER_ID = "86935102540"
@@ -34,10 +37,10 @@ def init_db():
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS orders 
-                 (request_id TEXT PRIMARY KEY, channel_id INTEGER, product TEXT, link TEXT, 
-                  user_id INTEGER, amount INTEGER, user_name TEXT, serial TEXT, code TEXT, telco TEXT, admin_msg_id INTEGER)''')
+                  (request_id TEXT PRIMARY KEY, channel_id INTEGER, product TEXT, link TEXT, 
+                   user_id INTEGER, amount INTEGER, user_name TEXT, serial TEXT, code TEXT, telco TEXT, admin_msg_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS warranty 
-                 (user_id INTEGER, guild_id INTEGER, expiry_timestamp REAL)''')
+                  (user_id INTEGER, guild_id INTEGER, expiry_timestamp REAL)''')
     conn.commit()
     conn.close()
 
