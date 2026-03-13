@@ -13,7 +13,6 @@ import re
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 import uvicorn
-import threading
 
 # --- CẤU HÌNH ---
 TOKEN = os.getenv("TOKEN")
@@ -118,7 +117,7 @@ async def callback_handler(request: Request):
     if order and status == "1":
         cog = bot.get_cog("BuildCardSystem")
         if cog:
-            # Gửi task vào loop của bot đang chạy ở thread khác
+            # Sử dụng task để tránh block server
             bot.loop.create_task(cog.process_confirm_order(order, is_manual=False))
     
     return {"status": 1, "message": "success"}
@@ -171,7 +170,7 @@ class BuildCardSystem(commands.Cog):
         embed.add_field(name="💰 Giá tiền", value=f"**{price:,} VND**", inline=True)
         await ctx.send(content=target_user.mention, embed=embed, view=BuyView(price, random_id))
 
-# --- UI COMPONENTS (GIỮ NGUYÊN) ---
+# --- UI COMPONENTS ---
 class BuyView(discord.ui.View):
     def __init__(self, amount, order_id):
         super().__init__(timeout=None)
@@ -215,19 +214,19 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
         else:
             await interaction.followup.send(f"❌ Lỗi: {result.get('message')}", ephemeral=True)
 
-# --- KHỞI CHẠY (CHỈ SỬA ĐOẠN NÀY ĐỂ CHẠY SONG SONG) ---
-def run_web():
+# --- KHỞI CHẠY ---
+@bot.event
+async def on_ready():
+    print(f"✅ Bot {bot.user} online!")
+
+async def main():
+    await bot.add_cog(BuildCardSystem(bot))
     port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+    server = uvicorn.Server(config)
+    
+    # Chạy song song cả 2 để không bị lỗi 404
+    await asyncio.gather(server.serve(), bot.start(TOKEN))
 
 if __name__ == "__main__":
-    # Chạy Web ở luồng riêng
-    t = threading.Thread(target=run_web)
-    t.start()
-    
-    # Chạy Bot ở luồng chính
-    async def start_bot():
-        await bot.add_cog(BuildCardSystem(bot))
-        await bot.start(TOKEN)
-        
-    asyncio.run(start_bot())
+    asyncio.run(main())
