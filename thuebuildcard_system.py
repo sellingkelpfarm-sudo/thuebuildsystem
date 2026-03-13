@@ -26,7 +26,7 @@ API_URL = "https://gachthe1s.com/chargingws/v2"
 
 SHOP_NAME = "LoTuss's Schematic Shop"
 CATEGORY_NAME = "orders-card"
-LOG_CHANNEL_ID = 1479880771274674259 
+LOG_CHANNEL_ID = 1479880771274674259
 ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 
 HISTORY_CHANNEL_ID = 1481239066115571885 
 WARRANTY_ROLE_ID = 1479550698982215852    
@@ -295,3 +295,4 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
 # ===== HÀM SETUP =====
 async def setup(bot):
     await bot.add_cog(BuildCardSystem(bot))
+
