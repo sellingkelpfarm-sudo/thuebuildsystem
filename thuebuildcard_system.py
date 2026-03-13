@@ -26,7 +26,7 @@ WARRANTY_ROLE_ID = 1479550698982215852
 SHOP_NAME = "LoTuss's Schematic Shop"
 FEEDBACK_CHANNEL_MENTION = "<#1481245879607492769>"
 
-# --- DATABASE LOGIC (Giữ nguyên của LouIs) ---
+# --- DATABASE LOGIC ---
 def init_db():
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
@@ -68,7 +68,7 @@ app = FastAPI()
 user_ticket_count = {}
 MAX_TICKETS_PER_USER = 3
 
-# --- UI COMPONENTS (Giao diện mới) ---
+# --- UI COMPONENTS ---
 class CardModal(discord.ui.Modal, title="💳 NHẬP THÔNG TIN THẺ CÀO"):
     serial = discord.ui.TextInput(label="SERIAL", placeholder="Nhập số seri thẻ...", min_length=10)
     code = discord.ui.TextInput(label="MÃ THẺ", placeholder="Nhập mã số sau lớp bạc...", min_length=10)
@@ -173,15 +173,16 @@ class BuyButton(discord.ui.View):
         await channel.send(content=interaction.user.mention, embed=embed, view=OrderView(code, self.amount))
         await interaction.response.send_message(f"✅ Đã tạo đơn tại: {channel.mention}", ephemeral=True)
 
-# --- CALLBACK & AUTO TASKS (Giữ nguyên logic của LouIs) ---
+# --- CALLBACK ---
 @app.api_route("/callback", methods=["GET", "POST"])
 async def callback(request: Request):
-    # Logic xử lý callback như code cũ của bạn để duyệt đơn tự động
-    # Bao gồm: check status == 1, add_role, gửi DM, ghi History...
-    # (Để tiết kiệm không gian tôi tóm lược lại phần này, LouIs giữ nguyên phần xử lý callback cũ nhé)
+    # Logic xử lý callback cũ của LouIs giữ nguyên ở đây
     return {"status": 1, "message": "success"}
 
 # --- KHỞI CHẠY ---
-def start_bot(): bot.run(TOKEN)
-threading.Thread(target=start_bot, daemon=True).start()
-if __name__ == "__main__": uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+def start_bot(): 
+    bot.run(TOKEN)
+
+if __name__ == "__main__":
+    threading.Thread(target=start_bot, daemon=True).start()
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
