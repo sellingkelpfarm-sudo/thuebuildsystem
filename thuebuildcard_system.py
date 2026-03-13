@@ -72,13 +72,6 @@ def get_order(request_id):
                 "user_id": row[4], "amount": row[5], "user_name": row[6], "admin_msg_id": row[10]}
     return None
 
-def delete_order(request_id):
-    conn = sqlite3.connect('orders.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM orders WHERE request_id = ?", (request_id,))
-    conn.commit()
-    conn.close()
-
 def update_admin_msg(request_id, msg_id):
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
@@ -124,8 +117,8 @@ async def callback_handler(request: Request):
     if order and status == "1":
         cog = bot.get_cog("BuildCardSystem")
         if cog:
-            # Gọi xử lý đơn hàng từ bot
-            asyncio.run_coroutine_threadsafe(cog.process_confirm_order(order, is_manual=False), bot.loop)
+            # Sử dụng task để tránh block server
+            bot.loop.create_task(cog.process_confirm_order(order, is_manual=False))
     
     return {"status": 1, "message": "success"}
 
@@ -177,18 +170,6 @@ class BuildCardSystem(commands.Cog):
         embed.add_field(name="💰 Giá tiền", value=f"**{price:,} VND**", inline=True)
         await ctx.send(content=target_user.mention, embed=embed, view=BuyView(price, random_id))
 
-    @commands.command(name="dathuecard")
-    @commands.has_permissions(administrator=True)
-    async def dathuecard(self, ctx, order_id: str):
-        await ctx.message.delete()
-        clean_id = order_id.upper().replace("BUILD-", "").strip()
-        order = get_order(clean_id)
-        if order:
-            await self.process_confirm_order(order, is_manual=True, admin_user=ctx.author)
-            await ctx.send(f"✅ Đã duyệt thủ công đơn `BUILD-{clean_id}`", delete_after=5)
-        else:
-            await ctx.send(f"❌ Không tìm thấy mã đơn `{order_id}`", delete_after=5)
-
 # --- UI COMPONENTS ---
 class BuyView(discord.ui.View):
     def __init__(self, amount, order_id):
@@ -222,43 +203,30 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
         user_id = interaction.user.id
         now = time.time()
         if user_id in user_block_until and now < user_block_until[user_id]:
-            return await interaction.response.send_message(f"🚫 Bạn đang bị chặn trong {int(user_block_until[user_id]-now)}s", ephemeral=True)
-        if user_id in user_cooldown and now - user_cooldown[user_id] < COOLDOWN_TIME:
-            return await interaction.response.send_message(f"⏳ Vui lòng chờ {int(COOLDOWN_TIME-(now-user_cooldown[user_id]))}s", ephemeral=True)
+            return await interaction.response.send_message(f"🚫 Bạn đang bị chặn", ephemeral=True)
         
         user_cooldown[user_id] = now
         await interaction.response.send_message("⏳ Đang gửi thẻ...", ephemeral=True)
         result = await send_card(self.telco, self.amount, self.serial.value, self.code.value, self.order_id)
         
         if str(result.get("status")) in ["1", "99"]:
-            await interaction.followup.send("✅ Đã nhận thẻ thành công, vui lòng chờ duyệt.", ephemeral=True)
-            user_fail_count[user_id] = 0
+            await interaction.followup.send("✅ Đã nhận thẻ thành công.", ephemeral=True)
         else:
-            fails = user_fail_count.get(user_id, 0) + 1
-            user_fail_count[user_id] = fails
-            if fails >= MAX_FAIL:
-                user_block_until[user_id] = now + 300
-                await interaction.followup.send("❌ Sai quá nhiều lần! Chặn 5 phút.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ Lỗi: {result.get('message')}. Thử lại sau {COOLDOWN_TIME}s.", ephemeral=True)
+            await interaction.followup.send(f"❌ Lỗi: {result.get('message')}", ephemeral=True)
 
-# --- KHỞI CHẠY DUY NHẤT ---
+# --- KHỞI CHẠY ---
+@bot.event
+async def on_ready():
+    print(f"✅ Bot {bot.user} online!")
+
 async def main():
-    # Khởi tạo database
-    init_db()
-    # Nạp Cog cho bot
     await bot.add_cog(BuildCardSystem(bot))
-    
-    # Cấu hình Web Server
     port = int(os.environ.get("PORT", 8080))
     config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(config)
     
-    # Chạy song song cả Web Server và Bot Discord trên cùng 1 process
-    await asyncio.gather(
-        server.serve(),
-        bot.start(TOKEN)
-    )
+    # Chạy song song cả 2 để không bị lỗi 404
+    await asyncio.gather(server.serve(), bot.start(TOKEN))
 
 if __name__ == "__main__":
     asyncio.run(main())
