@@ -20,8 +20,8 @@ app = FastAPI()
 
 # --- CẤU HÌNH ---
 TOKEN = os.getenv("TOKEN")
-PARTNER_ID = "86935102540"
-PARTNER_KEY = "c63d72291473a68fcbb23261491a103f"
+PARTNER_ID = "95904113535"
+PARTNER_KEY = "349afaff71cbd86fd48c6a83421071b2"
 API_URL = "https://gachthe1s.com/chargingws/v2"
 
 SHOP_NAME = "LoTuss's Schematic Shop"
@@ -191,7 +191,7 @@ class BuildCardSystem(commands.Cog):
             embed_log.add_field(name="💵 Tiền nhận", value=f"**{order['amount']:,} VND**", inline=False)
             await admin_ch.send(embed=embed_log)
 
-        embed_client = discord.Embed(title="🎊 CÔNG TRÌNH ĐÃ HOÀN THÀNH!", color=0x00FFFF)
+        embed_client = discord.Embed(title="🎊 CÔNG TRÌNH ĐÃ HOÀNH THÀNH!", color=0x00FFFF)
         embed_client.set_author(name=SHOP_NAME)
         embed_client.description = "Admin đã bàn giao xong công trình. Hẹn gặp lại bạn lần sau!"
         await ctx.send(content=f"<@{order['user_id']}>", embed=embed_client)
@@ -223,7 +223,11 @@ class BuyView(discord.ui.View):
 
 class TelcoSelect(discord.ui.Select):
     def __init__(self, order_id, amount):
-        options = [discord.SelectOption(label=x, value=x.upper()) for x in ["Viettel", "Vinaphone", "Mobifone", "Zing"]]
+        # Đã thêm Garena, Vcoin, Scoin và loại bỏ số % trong ngoặc
+        options = [
+            discord.SelectOption(label=x, value=x.upper()) 
+            for x in ["Viettel", "Vinaphone", "Mobifone", "Garena", "Zing", "Vcoin", "Scoin"]
+        ]
         super().__init__(placeholder="📡 Chọn nhà mạng", options=options)
         self.order_id, self.amount = order_id, amount
 
