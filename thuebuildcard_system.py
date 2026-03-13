@@ -11,12 +11,11 @@ import time
 import sqlite3
 import re
 from datetime import datetime, timedelta
-from fastapi import Request
+from fastapi import FastAPI, Request
+import uvicorn
 
-# Import app và bot từ file chính
-from main import app, bot 
-
-# --- CẤU HÌNH (GIỮ NGUYÊN) ---
+# --- CẤU HÌNH ---
+TOKEN = os.getenv("TOKEN")
 PARTNER_ID = "95904113535"
 PARTNER_KEY = "349afaff71cbd86fd48c6a83421071b2"
 API_URL = "https://gachthe1s.com/chargingws/v2"
@@ -29,12 +28,18 @@ HISTORY_CHANNEL_ID = 1481239066115571885
 WARRANTY_ROLE_ID = 1479550698982215852    
 FEEDBACK_CHANNEL_MENTION = "<#1481245879607492769>"
 
-# Cấu hình chống spam giống bot (1).py
 COOLDOWN_TIME = 30
 MAX_FAIL = 3
 user_cooldown = {}
 user_fail_count = {}
 user_block_until = {}
+
+# --- KHỞI TẠO APP & BOT ---
+app = FastAPI()
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ===== DATABASE SETUP (GIỮ NGUYÊN) =====
 def init_db():
@@ -53,7 +58,6 @@ def save_order(request_id, channel_id, product, link, user_id, amount, user_name
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO orders (request_id, channel_id, product, link, user_id, amount, user_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
               (request_id, channel_id, product, link, user_id, amount, user_name))
-    c.execute("INSERT OR REPLACE INTO card_attempts (request_id, attempts) VALUES (?, 0)", (request_id,))
     conn.commit()
     conn.close()
 
@@ -72,13 +76,19 @@ def delete_order(request_id):
     conn = sqlite3.connect('orders.db')
     c = conn.cursor()
     c.execute("DELETE FROM orders WHERE request_id = ?", (request_id,))
-    c.execute("DELETE FROM card_attempts WHERE request_id = ?", (request_id,))
+    conn.commit()
+    conn.close()
+
+def update_admin_msg(request_id, msg_id):
+    conn = sqlite3.connect('orders.db')
+    c = conn.cursor()
+    c.execute("UPDATE orders SET admin_msg_id = ? WHERE request_id = ?", (msg_id, request_id))
     conn.commit()
     conn.close()
 
 init_db()
 
-# --- LOGIC GỬI THẺ (THEO BOT (1).PY) ---
+# --- LOGIC GỬI THẺ ---
 async def send_card(telco, amount, serial, code, request_id):
     sign = hashlib.md5((PARTNER_KEY + code + serial).encode()).hexdigest()
     params = {
@@ -96,7 +106,7 @@ async def send_card(telco, amount, serial, code, request_id):
             try: return await resp.json()
             except: return {"status": "0", "message": "Lỗi kết nối API"}
 
-# --- WEBHOOK HANDLER (NGOÀI COG ĐỂ TRÁNH LỖI 404) ---
+# --- WEBHOOK CALLBACK ---
 @app.api_route("/callback", methods=["GET", "POST"])
 async def callback_handler(request: Request):
     data = {}
@@ -111,20 +121,18 @@ async def callback_handler(request: Request):
     status = str(data.get("status", ""))
     
     order = get_order(request_id)
-    if order:
-        if status == "1":
-            cog = bot.get_cog("BuildCardSystem")
-            if cog:
-                bot.loop.create_task(cog.process_confirm_order(order, is_manual=False))
+    if order and status == "1":
+        # Tìm Cog và gọi xử lý xác nhận
+        cog = bot.get_cog("BuildCardSystem")
+        if cog:
+            bot.loop.create_task(cog.process_confirm_order(order, is_manual=False))
+    
     return {"status": 1, "message": "success"}
 
-# ===== COG CLASS =====
+# --- COG SYSTEM ---
 class BuildCardSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    def random_code(self):
-        return ''.join(random.choices(string.digits, k=5))
 
     async def process_confirm_order(self, order_data, is_manual=False, admin_user=None):
         request_id = order_data["request_id"]
@@ -146,18 +154,6 @@ class BuildCardSystem(commands.Cog):
             admin_msg = await admin_ch.send(embed=embed_ad)
             update_admin_msg(request_id, admin_msg.id)
 
-        customer = self.bot.get_user(user_id)
-        if customer:
-            try:
-                dm_inv = discord.Embed(title="🧾 HÓA ĐƠN XÁC NHẬN DỊCH VỤ", color=0x2ECC71, timestamp=datetime.now())
-                dm_inv.set_author(name=SHOP_NAME)
-                dm_inv.add_field(name="🆔 Mã hóa đơn", value=f"`BUILD-{request_id}`", inline=True)
-                dm_inv.add_field(name="💰 Tổng thanh toán", value=f"**{amount:,} VND**", inline=True)
-                dm_inv.add_field(name="🚀 Trạng thái", value="`Đang xử lý` ✅", inline=True)
-                dm_inv.set_footer(text="Hệ thống sẽ thông báo khi công trình hoàn tất.")
-                await customer.send(embed=dm_inv)
-            except: pass
-
         client_chan = self.bot.get_channel(channel_id)
         if client_chan:
             embed_ok = discord.Embed(title="✅ THANH TOÁN THÀNH CÔNG", color=0x2ECC71)
@@ -170,18 +166,16 @@ class BuildCardSystem(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def thuebuildcard(self, ctx, price: int):
         await ctx.message.delete()
-        random_id = self.random_code()
-        order_code = f"BUILD-{random_id}"
+        random_id = ''.join(random.choices(string.digits, k=5))
         target_user = next((m for m in ctx.channel.members if not m.bot and not m.guild_permissions.administrator), ctx.author)
         save_order(random_id, ctx.channel.id, ctx.channel.name, "N/A", target_user.id, price, target_user.name)
 
         embed = discord.Embed(title="🏗️ KHỞI TẠO ĐƠN THUÊ BUILD (CARD)", color=0x3498DB, timestamp=datetime.now())
         embed.set_author(name=SHOP_NAME)
         embed.add_field(name="👤 Khách hàng", value=target_user.mention, inline=True)
-        embed.add_field(name="🆔 Mã đơn", value=f"`{order_code}`", inline=True)
+        embed.add_field(name="🆔 Mã đơn", value=f"`BUILD-{random_id}`", inline=True)
         embed.add_field(name="💰 Giá tiền", value=f"**{price:,} VND**", inline=True)
-        view = BuyView(price, random_id)
-        await ctx.send(content=target_user.mention, embed=embed, view=view)
+        await ctx.send(content=target_user.mention, embed=embed, view=BuyView(price, random_id))
 
     @commands.command(name="dathuecard")
     @commands.has_permissions(administrator=True)
@@ -195,36 +189,7 @@ class BuildCardSystem(commands.Cog):
         else:
             await ctx.send(f"❌ Không tìm thấy mã đơn `{order_id}`", delete_after=5)
 
-    @commands.command(name="xongcard")
-    @commands.has_permissions(administrator=True)
-    async def xongcard(self, ctx, order_id: str):
-        await ctx.message.delete()
-        clean_id = order_id.upper().replace("BUILD-", "").strip()
-        order = get_order(clean_id)
-        if not order: return await ctx.send("❌ Không tìm thấy đơn hàng.", delete_after=5)
-
-        admin_ch = self.bot.get_channel(ADMIN_TRACKING_CHANNEL_ID)
-        if admin_ch and order["admin_msg_id"]:
-            try:
-                old_msg = await admin_ch.fetch_message(order["admin_msg_id"])
-                await old_msg.delete()
-            except: pass
-
-        if admin_ch:
-            embed_log = discord.Embed(title="📊 LOG: ĐƠN HÀNG CARD HOÀN TẤT", color=0x27AE60, timestamp=datetime.now())
-            embed_log.add_field(name="🆔 Mã đơn", value=f"`BUILD-{clean_id}`", inline=True)
-            embed_log.add_field(name="💳 Loại hình", value="`Thanh toán qua Card`", inline=True)
-            embed_log.add_field(name="👷 Người thực hiện", value=ctx.author.mention, inline=True)
-            embed_log.add_field(name="💵 Tiền nhận", value=f"**{order['amount']:,} VND**", inline=False)
-            await admin_ch.send(embed=embed_log)
-
-        embed_client = discord.Embed(title="🎊 CÔNG TRÌNH ĐÃ HOÀN THÀNH!", color=0x00FFFF)
-        embed_client.set_author(name=SHOP_NAME)
-        embed_client.description = "Admin đã bàn giao xong công trình. Hẹn gặp lại bạn lần sau!"
-        await ctx.send(content=f"<@{order['user_id']}>", embed=embed_client)
-        delete_order(clean_id)
-
-# ===== VIEW & MODAL =====
+# --- UI COMPONENTS ---
 class BuyView(discord.ui.View):
     def __init__(self, amount, order_id):
         super().__init__(timeout=None)
@@ -256,30 +221,33 @@ class CardModal(discord.ui.Modal, title="💳 Nhập thông tin thẻ"):
     async def on_submit(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         now = time.time()
-
-        # Logic chặn/cooldown từ bot (1).py
         if user_id in user_block_until and now < user_block_until[user_id]:
-            return await interaction.response.send_message(f"🚫 Bạn đang bị chặn nạp thẻ trong {int(user_block_until[user_id]-now)}s", ephemeral=True)
+            return await interaction.response.send_message(f"🚫 Bạn đang bị chặn trong {int(user_block_until[user_id]-now)}s", ephemeral=True)
         if user_id in user_cooldown and now - user_cooldown[user_id] < COOLDOWN_TIME:
             return await interaction.response.send_message(f"⏳ Vui lòng chờ {int(COOLDOWN_TIME-(now-user_cooldown[user_id]))}s", ephemeral=True)
         
         user_cooldown[user_id] = now
         await interaction.response.send_message("⏳ Đang gửi thẻ...", ephemeral=True)
-        
         result = await send_card(self.telco, self.amount, self.serial.value, self.code.value, self.order_id)
         
         if str(result.get("status")) in ["1", "99"]:
-            await interaction.followup.send("✅ Đã nhận thẻ thành công, vui lòng chờ hệ thống kiểm tra.", ephemeral=True)
+            await interaction.followup.send("✅ Đã nhận thẻ thành công, vui lòng chờ duyệt.", ephemeral=True)
             user_fail_count[user_id] = 0
         else:
             fails = user_fail_count.get(user_id, 0) + 1
             user_fail_count[user_id] = fails
             if fails >= MAX_FAIL:
-                user_block_until[user_id] = now + 300 # Chặn 5 phút
-                await interaction.followup.send("❌ Sai quá nhiều lần! Bạn bị chặn 5 phút.", ephemeral=True)
+                user_block_until[user_id] = now + 300
+                await interaction.followup.send("❌ Sai quá nhiều lần! Chặn 5 phút.", ephemeral=True)
             else:
-                msg = result.get("message", "Thẻ không hợp lệ")
-                await interaction.followup.send(f"❌ Lỗi: {msg}. Thử lại sau {COOLDOWN_TIME}s.", ephemeral=True)
+                await interaction.followup.send(f"❌ Lỗi: {result.get('message')}. Thử lại sau {COOLDOWN_TIME}s.", ephemeral=True)
 
-async def setup(bot):
+# --- KHỞI CHẠY ---
+@app.on_event("startup")
+async def startup_event():
     await bot.add_cog(BuildCardSystem(bot))
+    asyncio.create_task(bot.start(TOKEN))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
