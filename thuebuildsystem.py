@@ -12,6 +12,7 @@ BANK_CHANNEL_ID = 1479440469120389221
 ADMIN_TRACKING_CHANNEL_ID = 1481705972325154939 
 SHOP_NAME = "LoTuss's Schematic Shop"
 
+# Khởi tạo bộ nhớ tạm (Giữ nguyên logic cũ)
 bank_waiting = {}   
 active_orders = {}  
 
@@ -72,7 +73,6 @@ class BuildSystem(commands.Cog):
                 embed_ad.add_field(name="💳 Phương thức", value="`Ngân hàng (Auto Bank)`", inline=True)
                 embed_ad.add_field(name="📍 Kênh Ticket", value=f"<#{data['channel']}>", inline=False)
                 
-                # Chỉnh sửa Footer nhắc lệnh mới
                 footer_text = f"Duyệt thủ công bởi {manual_ctx.author.name}" if manual_ctx else "Dùng lệnh !xongbank tại ticket sau khi hoàn tất."
                 embed_ad.set_footer(text=footer_text)
                 
@@ -127,7 +127,6 @@ class BuildSystem(commands.Cog):
     @commands.command(name="dathuebank")
     @commands.has_permissions(administrator=True)
     async def dathuebank(self, ctx, order_id: str):
-        """Duyệt đơn thủ công khi bank auto gặp sự cố."""
         await ctx.message.delete()
         clean_id = order_id.upper().replace("BUILD-", "").replace("BUILD", "").strip()
         
@@ -145,7 +144,6 @@ class BuildSystem(commands.Cog):
         
         order_data = active_orders[ctx.channel.id]
         
-        # Xóa dòng cam ở Admin
         admin_ch = self.bot.get_channel(ADMIN_TRACKING_CHANNEL_ID)
         if admin_ch and order_data["admin_msg_id"]:
             try:
@@ -153,7 +151,6 @@ class BuildSystem(commands.Cog):
                 await old_msg.delete()
             except: pass
 
-        # Log hoàn tất cho Admin (Màu xanh lá)
         if admin_ch:
             embed_log = discord.Embed(title="📊 LOG: ĐƠN HÀNG HOÀN TẤT [NGÂN HÀNG]", color=0x27AE60, timestamp=datetime.now())
             embed_log.add_field(name="🆔 Mã đơn", value=f"`{order_data['code']}`", inline=True)
@@ -162,7 +159,6 @@ class BuildSystem(commands.Cog):
             embed_log.add_field(name="💵 Tiền nhận", value=f"**{order_data['price']:,} VND**", inline=False)
             await admin_ch.send(embed=embed_log)
 
-        # Thông báo tại Ticket
         embed_client = discord.Embed(title="🎊 CÔNG TRÌNH ĐÃ HOÀN THÀNH!", color=0x00FFFF)
         embed_client.set_author(name=SHOP_NAME)
         embed_client.add_field(name="🆔 Mã đơn", value=f"`{order_data['code']}`", inline=True)
@@ -170,7 +166,6 @@ class BuildSystem(commands.Cog):
         embed_client.description = "Admin đã bàn giao xong công trình. Hẹn gặp lại bạn lần sau!"
         await ctx.send(content=f"<@{order_data['user']}>", embed=embed_client)
 
-        # Biên lai DMs cho khách
         customer = self.bot.get_user(order_data["user"])
         if customer:
             try:
@@ -186,7 +181,10 @@ class BuildSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        if message.author.bot and message.channel.id != BANK_CHANNEL_ID: return
+        # Đảm bảo không xử lý tin nhắn từ chính bot ngoại trừ kênh bank
+        if message.author.id == self.bot.user.id and message.channel.id != BANK_CHANNEL_ID: 
+            return
+            
         if message.channel.id == BANK_CHANNEL_ID:
             content = message.content.upper().replace(" ", "").replace("-", "")
             matches = re.findall(r"BUILD(\d{5})", content)
@@ -194,5 +192,6 @@ class BuildSystem(commands.Cog):
                 if await self.confirm_order(matches[-1]):
                     await message.add_reaction("✅")
 
+# --- HÀM SETUP CHO EXTENSION (QUAN TRỌNG ĐỂ FIX LỖI RAILWAY) ---
 async def setup(bot):
     await bot.add_cog(BuildSystem(bot))
