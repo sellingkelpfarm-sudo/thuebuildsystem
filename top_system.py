@@ -7,20 +7,20 @@ from datetime import datetime
 class TopSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.update_top_task.start() # Bắt đầu vòng lặp tự động cập nhật
+        self.update_top_task.start()
 
     def cog_unload(self):
-        self.update_top_task.cancel() # Dừng vòng lặp khi tắt hệ thống
+        self.update_top_task.cancel()
 
     @tasks.loop(minutes=30)
     async def update_top_task(self):
         await self.bot.wait_until_ready()
         
-        # Kết nối database chung bank_orders.db
+        # Sử dụng đúng file database chung của bạn
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
         
-        # Lấy ID kênh và ID tin nhắn đã lưu
+        # Lấy cấu hình kênh và tin nhắn từ database
         c.execute("SELECT value FROM config WHERE key = 'top_channel'")
         ch_res = c.fetchone()
         c.execute("SELECT value FROM config WHERE key = 'top_message'")
@@ -35,14 +35,14 @@ class TopSystem(commands.Cog):
             conn.close()
             return
             
-        # Lấy dữ liệu Top 10 đại gia
+        # Lấy dữ liệu Top 10
         try:
             c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
             rows = c.fetchall()
         except sqlite3.OperationalError:
             rows = []
         
-        # GIỮ NGUYÊN EMBED GỐC SANG TRỌNG CỦA BẠN
+        # GIỮ NGUYÊN EMBED GỐC CỦA BẠN
         embed = discord.Embed(
             title="✨ 🏆 BẢNG VÀNG ĐẠI GIA ĐÃ THUÊ BUILD - LOTUSS'S SHOP 🏆 ✨", 
             description=(
@@ -80,7 +80,7 @@ class TopSystem(commands.Cog):
             icon_url=avatar_url
         )
         
-        # Logic gửi mới hoặc sửa tin nhắn cũ (giống mẫu code bạn gửi)
+        # Logic sửa tin nhắn cũ hoặc gửi mới
         message = None
         if msg_res:
             try: message = await channel.fetch_message(int(msg_res[0]))
@@ -98,17 +98,17 @@ class TopSystem(commands.Cog):
     @commands.command(name="settopbuild")
     @commands.has_permissions(administrator=True)
     async def settopbuild(self, ctx):
-        """Thiết lập kênh này làm nơi hiển thị Bảng Xếp Hạng Top Build"""
+        """Thiết lập kênh hiển thị bảng TOP và dùng lệnh !settopbuild"""
         conn = sqlite3.connect('bank_orders.db')
-        # Lưu ID kênh hiện tại vào database
+        # Lưu ID kênh
         conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('top_channel', ?)", (str(ctx.channel.id),))
-        # Xóa ID tin nhắn cũ để bot tạo tin nhắn mới ở kênh này
+        # Reset ID tin nhắn để tạo bảng mới
         conn.execute("DELETE FROM config WHERE key = 'top_message'")
         conn.commit()
         conn.close()
         
-        await ctx.send(f"✅ Đã thiết lập kênh {ctx.channel.mention} làm nơi hiện BXH Top Build. Bot sẽ khởi tạo bảng ngay...", delete_after=5)
-        # Chạy cập nhật ngay lập tức
+        await ctx.send(f"✅ Đã thiết lập kênh {ctx.channel.mention} làm nơi hiện bảng TOP. Đang khởi tạo...", delete_after=5)
+        # Gọi cập nhật ngay lập tức
         await self.update_top_task.__wrapped__(self)
 
 async def setup(bot):
