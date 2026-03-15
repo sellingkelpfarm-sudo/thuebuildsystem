@@ -16,10 +16,14 @@ class TopSystem(commands.Cog):
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
         try:
-            # Lấy top 10 người chi tiêu nhiều nhất từ bảng leaderboard
+            # Kiểm tra xem bảng có tồn tại không trước khi lấy dữ liệu
             c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
             data = c.fetchall()
         except sqlite3.OperationalError:
+            # Nếu chưa có bảng leaderboard, tạo bảng để tránh lỗi lần sau
+            c.execute('''CREATE TABLE IF NOT EXISTS leaderboard 
+                         (user_id INTEGER PRIMARY KEY, total_spent INTEGER DEFAULT 0, order_count INTEGER DEFAULT 0)''')
+            conn.commit()
             data = []
         conn.close()
 
@@ -56,10 +60,11 @@ class TopSystem(commands.Cog):
 
         embed.add_field(name="✨ DANH SÁCH VINH DANH ✨", value=top_list, inline=False)
         
-        # Footer kèm ảnh avatar bot
+        # Footer kèm ảnh avatar bot (Sửa nhẹ chỗ avatar để tránh lỗi None)
+        avatar_url = self.bot.user.display_avatar.url if self.bot.user else None
         embed.set_footer(
             text=f"🕒 Cập nhật lúc: {datetime.now().strftime('%H:%M - %d/%m/%Y')}",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
+            icon_url=avatar_url
         )
         
         await ctx.send(embed=embed)
