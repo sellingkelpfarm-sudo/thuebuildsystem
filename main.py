@@ -28,6 +28,7 @@ async def load_extensions():
     extensions = [
         "thuebuildsystem", 
         "thuebuildcard_system"
+        "top_system"
     ]
     
     for ext in extensions:
