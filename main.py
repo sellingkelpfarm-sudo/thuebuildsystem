@@ -4,8 +4,6 @@ import os
 import asyncio
 
 # --- KHỞI TẠO INTENTS ---
-# Cần message_content để đọc lệnh và nội dung bank
-# Cần members để xác định khách hàng trong ticket
 intents = discord.Intents.default()
 intents.message_content = True 
 intents.members = True          
@@ -19,15 +17,13 @@ async def on_ready():
     print(f'Đã đăng nhập thành công: {bot.user.name}')
     print(f'ID Bot: {bot.user.id}')
     print(f'---')
-    # Trạng thái hiển thị của Bot
     await bot.change_presence(activity=discord.Game(name="Building Services"))
 
 async def load_extensions():
     """Tải các file hệ thống (Cogs)"""
-    # Danh sách các file .py hệ thống của bạn
     extensions = [
         "thuebuildsystem", 
-        "thuebuildcard_system"
+        "thuebuildcard_system", # Đã thêm dấu phẩy ở đây
         "top_system"
     ]
     
@@ -40,12 +36,8 @@ async def load_extensions():
 
 async def main():
     async with bot:
-        # Nạp các file hệ thống trước khi chạy bot
         await load_extensions()
-        
-        # Lấy Token từ Variables trên Railway
         token = os.getenv("DISCORD_TOKEN")
-        
         if token:
             await bot.start(token)
         else:
