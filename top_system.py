@@ -12,25 +12,21 @@ class TopSystem(commands.Cog):
     async def settopbuild(self, ctx):
         """Hiển thị bảng xếp hạng đại gia thuê build theo phong cách sang trọng"""
         
-        # Kết nối lấy dữ liệu từ database thực tế của hệ thống
+        # Kết nối lấy dữ liệu từ database thực tế
         conn = sqlite3.connect('bank_orders.db')
         c = conn.cursor()
         try:
-            # Kiểm tra xem bảng có tồn tại không trước khi lấy dữ liệu
+            # Lấy top 10 người chi tiêu nhiều nhất từ bảng leaderboard
             c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
             data = c.fetchall()
         except sqlite3.OperationalError:
-            # Nếu chưa có bảng leaderboard, tạo bảng để tránh lỗi lần sau
-            c.execute('''CREATE TABLE IF NOT EXISTS leaderboard 
-                         (user_id INTEGER PRIMARY KEY, total_spent INTEGER DEFAULT 0, order_count INTEGER DEFAULT 0)''')
-            conn.commit()
             data = []
         conn.close()
 
         if not data:
             return await ctx.send("🚀 *Hiện chưa có dữ liệu vinh danh, hãy trở thành người đầu tiên!*")
 
-        # Giữ nguyên Embed gốc của bạn
+        # GIỮ NGUYÊN EMBED GỐC CỦA BẠN
         embed = discord.Embed(
             title="✨ 🏆 BẢNG VÀNG ĐẠI GIA ĐÃ THUÊ BUILD - LOTUSS'S SHOP 🏆 ✨", 
             description=(
@@ -39,17 +35,16 @@ class TopSystem(commands.Cog):
                 "đã luôn đồng hành và ủng hộ Shop hết mình.*\n"
                 "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
             ), 
-            color=0xf1c40f, # Màu vàng Gold cực sang
+            color=0xf1c40f, 
             timestamp=datetime.now()
         )
 
         medals = ["🥇", "🥈", "🥉", "👤", "👤", "👤", "👤", "👤", "👤", "👤"]
         top_list = ""
 
-        # Duyệt qua dữ liệu từ Database
         for i, (u_id, total) in enumerate(data):
             user_mention = f"<@{u_id}>"
-            money = f"{int(total):,}" # Định dạng 100,000
+            money = f"{int(total):,}" 
             
             if i == 0: # QUÁN QUÂN
                 top_list += f"⭐ {medals[i]} **QUÁN QUÂN: {user_mention}**\n┗ 💰 Tổng chi: `{money} VND`\n\n"
@@ -60,7 +55,7 @@ class TopSystem(commands.Cog):
 
         embed.add_field(name="✨ DANH SÁCH VINH DANH ✨", value=top_list, inline=False)
         
-        # Footer kèm ảnh avatar bot (Sửa nhẹ chỗ avatar để tránh lỗi None)
+        # Footer kèm ảnh avatar bot
         avatar_url = self.bot.user.display_avatar.url if self.bot.user else None
         embed.set_footer(
             text=f"🕒 Cập nhật lúc: {datetime.now().strftime('%H:%M - %d/%m/%Y')}",
