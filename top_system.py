@@ -1,47 +1,32 @@
 import discord
 from discord.ext import commands
-import json
+import sqlite3
 import os
 from datetime import datetime
-
-# Đường dẫn file lưu trữ (Bạn có thể đổi thành .db nếu muốn dùng SQLite sau này)
-DATA_FILE = "top_orders.json"
-
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except:
-                return {}
-    return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
 
 class TopSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @staticmethod
-    def update_top(user_id, amount):
-        """Hàm dùng chung để cộng dồn tiền từ cả Bank và Card"""
-        data = load_data()
-        u_id = str(user_id)
-        data[u_id] = data.get(u_id, 0) + amount
-        save_data(data)
-
-    @commands.command(name="topbuild")
-    async def topbuild(self, ctx):
+    @commands.command(name="settopbuild")
+    async def settopbuild(self, ctx):
         """Hiển thị bảng xếp hạng đại gia thuê build theo phong cách sang trọng"""
-        data = load_data()
+        
+        # Kết nối lấy dữ liệu từ database thực tế của hệ thống
+        conn = sqlite3.connect('bank_orders.db')
+        c = conn.cursor()
+        try:
+            # Lấy top 10 người chi tiêu nhiều nhất từ bảng leaderboard
+            c.execute("SELECT user_id, total_spent FROM leaderboard ORDER BY total_spent DESC LIMIT 10")
+            data = c.fetchall()
+        except sqlite3.OperationalError:
+            data = []
+        conn.close()
+
         if not data:
             return await ctx.send("🚀 *Hiện chưa có dữ liệu vinh danh, hãy trở thành người đầu tiên!*")
 
-        # Sắp xếp 10 người chi đậm nhất
-        sorted_top = sorted(data.items(), key=lambda item: item[1], reverse=True)[:10]
-
+        # Giữ nguyên Embed gốc của bạn
         embed = discord.Embed(
             title="✨ 🏆 BẢNG VÀNG ĐẠI GIA ĐÃ THUÊ BUILD - LOTUSS'S SHOP 🏆 ✨", 
             description=(
@@ -57,7 +42,8 @@ class TopSystem(commands.Cog):
         medals = ["🥇", "🥈", "🥉", "👤", "👤", "👤", "👤", "👤", "👤", "👤"]
         top_list = ""
 
-        for i, (u_id, total) in enumerate(sorted_top):
+        # Duyệt qua dữ liệu từ Database
+        for i, (u_id, total) in enumerate(data):
             user_mention = f"<@{u_id}>"
             money = f"{int(total):,}" # Định dạng 100,000
             
