@@ -27,7 +27,7 @@ async def load_extensions():
     # Danh sách các file .py hệ thống của bạn
     extensions = [
         "thuebuildsystem", 
-        "thuebuildcardsystem"
+        "thuebuildcard_system"
     ]
     
     for ext in extensions:
